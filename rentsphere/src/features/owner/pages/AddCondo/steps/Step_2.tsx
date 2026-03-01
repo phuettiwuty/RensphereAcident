@@ -3,7 +3,8 @@ import WaterIconImg from "@/assets/Water.png";
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import UtilitySetupCard from "../components/UtilitySetupCard";
-import { saveUtilities } from "../condoApi";
+import { saveUtilities, getUtilities } from "../condoApi";
+import { useCondoWizardStore } from "../condoWizard.store";
 
 type UtilityType = "water" | "electricity";
 type BillingType = "METER" | "METER_MIN" | "FLAT";
@@ -16,22 +17,30 @@ type UtilityConfig = {
 function UtilityConfigPopup({
   open,
   utilityType,
+  initialConfig,
   onClose,
   onSave,
 }: {
   open: boolean;
   utilityType: UtilityType | null;
+  initialConfig?: UtilityConfig | null;
   onClose: () => void;
   onSave: (config: UtilityConfig) => void;
 }) {
   const [billingType, setBillingType] = useState<BillingType | "">("");
   const [rate, setRate] = useState("");
 
+  // ✅ pre-fill ค่าเดิมเมื่อเปิด popup
   useEffect(() => {
     if (!open) return;
-    setBillingType("");
-    setRate("");
-  }, [open]);
+    if (initialConfig) {
+      setBillingType(initialConfig.billingType);
+      setRate(String(initialConfig.rate));
+    } else {
+      setBillingType("");
+      setRate("");
+    }
+  }, [open, initialConfig]);
 
   useEffect(() => {
     if (!open) return;
@@ -87,6 +96,7 @@ function UtilityConfigPopup({
             <select
               value={billingType}
               onChange={(e) => setBillingType(e.target.value as BillingType)}
+              title="ประเภทการคิดเงิน"
               className="w-full h-12 rounded-xl border border-gray-200 bg-white px-4 text-sm font-bold text-gray-900 shadow-sm
                          focus:outline-none focus:ring-4 focus:ring-blue-200/60 focus:border-blue-300"
             >
@@ -150,9 +160,11 @@ function UtilityConfigPopup({
 
 const Step_2: React.FC = () => {
   const nav = useNavigate();
+  const condoId = useCondoWizardStore((s) => s.condoId);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [currentUtility, setCurrentUtility] = useState<UtilityType | null>(null);
+  const [currentInitialConfig, setCurrentInitialConfig] = useState<UtilityConfig | null>(null);
 
   const [utilityConfig, setUtilityConfig] = useState<
     Record<UtilityType, UtilityConfig | null>
@@ -161,8 +173,32 @@ const Step_2: React.FC = () => {
     electricity: null,
   });
 
+  // ✅ โหลดค่าน้ำ/ค่าไฟเดิมจาก DB
+  useEffect(() => {
+    if (!condoId) return;
+    let cancelled = false;
+    getUtilities()
+      .then((data) => {
+        if (cancelled) return;
+        const configs = data.configs || [];
+        for (const c of configs) {
+          const key = c.utility_type as UtilityType;
+          if (key === "water" || key === "electricity") {
+            setUtilityConfig((prev) => ({
+              ...prev,
+              [key]: { billingType: c.billing_type as BillingType, rate: Number(c.rate || 0) },
+            }));
+          }
+        }
+      })
+      .catch((e) => console.error("load utilities error:", e));
+    return () => { cancelled = true; };
+  }, [condoId]);
+
   const handleOpenModal = (utility: UtilityType) => {
     setCurrentUtility(utility);
+    // ✅ ส่งค่าเดิมไปให้ popup pre-fill
+    setCurrentInitialConfig(utilityConfig[utility] || null);
     setModalOpen(true);
   };
 
@@ -278,6 +314,7 @@ const Step_2: React.FC = () => {
       <UtilityConfigPopup
         open={modalOpen}
         utilityType={currentUtility}
+        initialConfig={currentInitialConfig}
         onClose={handleCloseModal}
         onSave={handleSave}
       />

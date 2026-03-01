@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getRooms, setRoomPrices } from "../condoApi";
-
+import { useCondoWizardStore } from "../condoWizard.store";
 import FloorSection from "../components/FloorSection";
 import SetRoomPriceModal from "../components/SetRoomPriceModal";
 import type { Room } from "../types/addCondo.types";
 
 export default function Step6RoomPrice() {
     const nav = useNavigate();
+    const condoId = useCondoWizardStore((s) => s.condoId);
 
     // ======================
     // Local state (no store)
@@ -23,6 +24,7 @@ export default function Step6RoomPrice() {
     // - setFloorCount, setRooms
     // ======================
     useEffect(() => {
+        if (!condoId) return;
         let cancelled = false;
         async function load() {
             try {
@@ -47,7 +49,7 @@ export default function Step6RoomPrice() {
         }
         load();
         return () => { cancelled = true; };
-    }, []);
+    }, [condoId]);
 
     // Group rooms by floor
     const roomsByFloor = useMemo(() => {

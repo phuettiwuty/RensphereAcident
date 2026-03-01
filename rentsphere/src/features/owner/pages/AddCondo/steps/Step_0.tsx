@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import CondoInfoSection from "../components/CondoInfoSection";
 import OtherDetailsSection from "../components/OtherDetailsSection";
@@ -130,6 +130,85 @@ export default function Step_0() {
     acceptFine: false,
   });
 
+  const condoId = useCondoWizardStore((s) => s.condoId);
+  const setCondoId = useCondoWizardStore((s) => s.setCondoId);
+
+  // ✅ Auto-detect: ถ้ายังไม่มี condoId แต่ user มีคอนโดอยู่ใน DB → set condoId อัตโนมัติ
+  useEffect(() => {
+    if (condoId) return; // มี condoId แล้ว ไม่ต้องทำ
+    let cancelled = false;
+    (async () => {
+      try {
+        // อ่าน token จาก localStorage โดยตรง (เพราะ Zustand auth store อาจยัง hydrate ไม่เสร็จ)
+        let token = "";
+        try {
+          const raw = localStorage.getItem("rentsphere_auth");
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            token = parsed?.state?.token || "";
+          }
+        } catch { }
+        console.log("[Step0] Auto-detect: token =", token ? "YES" : "NO");
+        if (!token) return;
+
+        const res = await fetch(`${API}/api/v1/condos/mine`, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        console.log("[Step0] Auto-detect: /condos/mine status =", res.status);
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        console.log("[Step0] Auto-detect: response data =", data);
+        // หา condo ที่ user เป็นเจ้าของ
+        let condo: any = null;
+        if (data.condo) condo = data.condo;
+        else if (Array.isArray(data.condos) && data.condos.length > 0) condo = data.condos[0];
+
+        if (condo && condo.id && !cancelled) {
+          console.log("[Step0] Auto-detected condo:", condo.id);
+          setCondoId(condo.id);
+        } else {
+          console.log("[Step0] No condo found in response");
+        }
+      } catch (e) {
+        console.error("[Step0] auto-detect condo error:", e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [condoId, setCondoId]);
+
+  // ✅ โหลดข้อมูลเดิมจาก DB เมื่อมี condoId (กดย้อนกลับ / refresh)
+  useEffect(() => {
+    if (!condoId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { getCondoDetail } = await import("../condoApi");
+        const data = await getCondoDetail();
+        if (cancelled || !data.condo) return;
+        const c = data.condo;
+        setFormData((prev) => ({
+          ...prev,
+          nameTh: c.name_th || "",
+          addressTh: c.address_th || "",
+          nameEn: c.name_en || "",
+          addressEn: c.address_en || "",
+          phoneNumber: c.phone_number || "",
+          taxId: c.tax_id || "",
+          paymentDueDate: c.payment_due_date ? String(c.payment_due_date) : "",
+          fineAmount: c.fine_amount ? String(c.fine_amount) : "",
+          acceptFine: !!c.accept_fine,
+        }));
+      } catch (e) {
+        console.error("load condo detail error:", e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [condoId]);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
     if (!name) return;
@@ -162,6 +241,12 @@ export default function Step_0() {
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const handleSubmit = async () => {
+    // ถ้ามี condoId แล้ว = กลับมาแก้ไข => ไม่ต้อง create ใหม่
+    if (condoId) {
+      nav("/owner/add-condo/step-1");
+      return;
+    }
+
     setSubmitting(true);
     setSubmitError(null);
 
@@ -169,9 +254,9 @@ export default function Step_0() {
       const token = useAuthStore.getState().token;
       if (!token) throw new Error("กรุณาเข้าสู่ระบบก่อน");
 
-      const { condoId } = await createCondo(formData, token);
+      const { condoId: newCondoId } = await createCondo(formData, token);
 
-      useCondoWizardStore.getState().setCondoId(condoId);
+      useCondoWizardStore.getState().setCondoId(newCondoId);
       nav("/owner/add-condo/step-1");
     } catch (e: any) {
       setSubmitError(e?.message ?? "เกิดข้อผิดพลาด");
@@ -229,18 +314,29 @@ export default function Step_0() {
       )}
 
       <div className="flex items-center justify-end gap-[14px] flex-wrap pt-4">
+        {condoId && (
+          <button
+            type="button"
+            onClick={() => nav("/owner/add-condo/step-1")}
+            className="h-[46px] w-24 rounded-xl border-0 text-white font-black text-sm shadow-[0_12px_22px_rgba(0,0,0,0.18)] transition
+             bg-[#93C5FD] hover:bg-[#7fb4fb] active:scale-[0.98] cursor-pointer
+             focus:outline-none focus:ring-2 focus:ring-blue-300"
+          >
+            ต่อไป
+          </button>
+        )}
         <button
           type="button"
           onClick={handleSubmit}
           disabled={!canCreate || submitting}
           className={[
-            "h-[46px] w-24 rounded-xl border-0 text-white font-black text-sm shadow-[0_12px_22px_rgba(0,0,0,0.18)] transition",
+            "h-[46px] px-5 rounded-xl border-0 text-white font-black text-sm shadow-[0_12px_22px_rgba(0,0,0,0.18)] transition",
             "!bg-[#93C5FD] hover:!bg-[#7fb4fb] active:scale-[0.98] cursor-pointer",
             "focus:outline-none focus:ring-2 focus:ring-blue-300",
             "disabled:opacity-60 disabled:cursor-not-allowed disabled:shadow-none disabled:active:scale-100",
           ].join(" ")}
         >
-          {submitting ? "กำลังสร้าง..." : "สร้าง"}
+          {submitting ? "กำลังสร้าง..." : condoId ? "บันทึก" : "สร้าง"}
         </button>
       </div>
     </div>

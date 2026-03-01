@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { addService } from "../condoApi";
+import { addService, getServices } from "../condoApi";
+import { useCondoWizardStore } from "../condoWizard.store";
 
 type ServiceDraft = {
   id: string;
@@ -12,8 +13,36 @@ type ServiceDraft = {
 
 const Step_1: React.FC = () => {
   const nav = useNavigate();
+  const condoId = useCondoWizardStore((s) => s.condoId);
 
   const [services, setServices] = useState<ServiceDraft[]>([]);
+
+  // ✅ โหลดบริการเดิมจาก DB (โหลดใหม่ทุกครั้งที่ condoId มีค่า/เปลี่ยนแปลง)
+  useEffect(() => {
+    console.log("[DEBUG Step1] condoId =", condoId);
+    if (!condoId) {
+      console.log("[DEBUG Step1] condoId is falsy, skipping fetch");
+      return;
+    }
+    let cancelled = false;
+    console.log("[DEBUG Step1] Fetching services...");
+    getServices()
+      .then((data) => {
+        console.log("[DEBUG Step1] getServices response:", data);
+        if (cancelled) return;
+        const mapped: ServiceDraft[] = (data.services || []).map((s: any) => ({
+          id: s.id || crypto.randomUUID(),
+          name: s.name || "",
+          price: Number(s.price || 0),
+          isVariable: !!s.is_variable,
+          variableType: (s.variable_type || "NONE") as ServiceDraft["variableType"],
+        }));
+        console.log("[DEBUG Step1] mapped services:", mapped);
+        setServices(mapped);
+      })
+      .catch((e) => console.error("[DEBUG Step1] load services error:", e));
+    return () => { cancelled = true; };
+  }, [condoId]);
 
   const [serviceName, setServiceName] = useState("");
   const [priceText, setPriceText] = useState("");

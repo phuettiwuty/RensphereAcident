@@ -281,6 +281,8 @@ function UserManagementPanel({ condoName }: { condoName: string }) {
                                         value={form.fullName}
                                         onChange={(e) => setForm((s) => ({ ...s, fullName: e.target.value }))}
                                         className={inputPill()}
+                                        title="ชื่อและนามสกุล"
+                                        placeholder="ชื่อและนามสกุล"
                                     />
                                 </Field>
 
@@ -289,6 +291,8 @@ function UserManagementPanel({ condoName }: { condoName: string }) {
                                         value={form.phone}
                                         onChange={(e) => setForm((s) => ({ ...s, phone: e.target.value }))}
                                         className={inputPill()}
+                                        title="เบอร์โทรศัพท์มือถือ"
+                                        placeholder="เบอร์โทรศัพท์มือถือ"
                                     />
                                 </Field>
 
@@ -297,6 +301,8 @@ function UserManagementPanel({ condoName }: { condoName: string }) {
                                         value={form.email}
                                         onChange={(e) => setForm((s) => ({ ...s, email: e.target.value }))}
                                         className={inputPill()}
+                                        title="อีเมล"
+                                        placeholder="อีเมล"
                                     />
                                 </Field>
 
@@ -305,6 +311,7 @@ function UserManagementPanel({ condoName }: { condoName: string }) {
                                         value={form.role}
                                         onChange={(e) => setForm((s) => ({ ...s, role: e.target.value as UserRole }))}
                                         className={selectPill()}
+                                        title="ตำแหน่ง"
                                     >
                                         <option value="OWNER">เจ้าของ</option>
                                         <option value="ADMIN">แอดมิน</option>
