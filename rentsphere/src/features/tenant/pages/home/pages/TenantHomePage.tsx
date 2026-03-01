@@ -29,26 +29,22 @@ export default function TenantHomePage() {
   const [unit, setUnit] = useState("");
 
   useEffect(() => {
-    // 1) ลองดึงข้อมูลจาก rentsphere_tenant (set ตอนใส่ access code)
-    const tenantRaw = localStorage.getItem("rentsphere_tenant");
-    if (tenantRaw) {
-      try {
-        const data = JSON.parse(tenantRaw);
-        setFullName(data.tenantName || "ผู้เช่า");
-        setCondoName(data.condoName || "RentSphere");
-        setUnit(data.roomNo ? `ห้อง ${data.roomNo}` : (data.floor ? `ชั้น ${data.floor}` : ""));
-        setLoading(false);
-        return;
-      } catch { }
-    }
-
-    // 2) fallback: เช็คจาก lineUserId + dorm/status API
     const lineUserId = localStorage.getItem("lineUserId");
     if (!lineUserId) {
       nav("/role", { replace: true });
       return;
     }
 
+    // ดึง condoName จาก cache (dorm/status ไม่ส่ง condoName)
+    const tenantRaw = localStorage.getItem("rentsphere_tenant");
+    if (tenantRaw) {
+      try {
+        const cached = JSON.parse(tenantRaw);
+        if (cached.condoName) setCondoName(cached.condoName);
+      } catch { }
+    }
+
+    // โหลดข้อมูลล่าสุดจาก backend ทุกครั้ง
     const run = async () => {
       try {
         setLoading(true);
@@ -65,6 +61,15 @@ export default function TenantHomePage() {
         const dormUser = data.dormUser;
         setFullName(dormUser?.full_name || "ผู้เช่า");
         setUnit(dormUser?.room ? `ห้อง ${dormUser.room}` : "");
+
+        // อัพเดต cache ด้วย
+        if (tenantRaw) {
+          try {
+            const cached = JSON.parse(tenantRaw);
+            cached.tenantName = dormUser?.full_name || cached.tenantName;
+            localStorage.setItem("rentsphere_tenant", JSON.stringify(cached));
+          } catch { }
+        }
       } catch (e: any) {
         setErr(e?.message || "เกิดข้อผิดพลาด");
       } finally {

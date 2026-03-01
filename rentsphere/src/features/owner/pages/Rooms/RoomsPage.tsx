@@ -1,6 +1,7 @@
 import OwnerShell from "@/features/owner/components/OwnerShell";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { Building2 } from "lucide-react";
 
 /* ================= helpers ================= */
 function getRoomLabel(room: any) {
@@ -136,6 +137,7 @@ export default function RoomsPage() {
 
     const [condoId, setCondoId] = useState<string | null>(condoIdFromState);
     const [condoName, setCondoName] = useState<string>("—");
+    const [condos, setCondos] = useState<CondoLite[]>([]);
 
     const [rooms, setRooms] = useState<RoomRow[]>([]);
 
@@ -143,29 +145,34 @@ export default function RoomsPage() {
     const [openPickRoom, setOpenPickRoom] = useState(false);
     const [pickRoomId, setPickRoomId] = useState<string>("");
 
-    //1)ถ้าไม่มี condoId ที่ส่งมา เลือกคอนโดแรกของ user
+    //1) โหลดรายการคอนโดทั้งหมดของ owner
     useEffect(() => {
         let cancelled = false;
 
-        const ensureCondo = async () => {
-            if (condoId) return;
-
+        const loadCondos = async () => {
             try {
                 setLoading(true);
                 setError(null);
 
-                const condos = await fetchMyCondos();
+                const list = await fetchMyCondos();
                 if (cancelled) return;
 
-                if (condos.length === 0) {
+                setCondos(list);
+
+                if (list.length === 0) {
                     setLoading(false);
                     setRooms([]);
                     setCondoName("—");
                     return;
                 }
 
-                setCondoId(condos[0].id);
-                setCondoName(condos[0].name);
+                // ถ้ามี condoId จาก state ให้ใช้ตัวนั้น, ไม่งั้นเลือกตัวแรก
+                const picked = condoIdFromState
+                    ? list.find(c => c.id === condoIdFromState) || list[0]
+                    : list[0];
+
+                setCondoId(picked.id);
+                setCondoName(picked.name);
             } catch (e: any) {
                 if (cancelled) return;
                 setError(e?.message ?? "เกิดข้อผิดพลาด");
@@ -173,11 +180,11 @@ export default function RoomsPage() {
             }
         };
 
-        ensureCondo();
+        loadCondos();
         return () => {
             cancelled = true;
         };
-    }, [condoId]);
+    }, []);
 
     //2)โหลด rooms จาก backend
     useEffect(() => {
@@ -236,8 +243,29 @@ export default function RoomsPage() {
     return (
         <OwnerShell title="ห้อง" activeKey="rooms" showSidebar={true}>
             <div className="mb-4 flex items-center justify-between">
-                <div className="text-sm font-bold text-gray-500">
-                    คอนโดมิเนียม : <span className="text-gray-800">{condoName}</span>
+                <div className="flex items-center gap-3">
+                    <label className="text-sm font-bold text-gray-500 flex items-center gap-1.5">
+                        <Building2 size={15} /> คอนโดมิเนียม :
+                    </label>
+                    {condos.length > 1 ? (
+                        <select
+                            value={condoId || ""}
+                            onChange={(e) => {
+                                const c = condos.find(x => x.id === e.target.value);
+                                if (c) {
+                                    setCondoId(c.id);
+                                    setCondoName(c.name);
+                                }
+                            }}
+                            className="rounded-xl border-2 border-blue-200 bg-white px-3 py-1.5 text-sm font-bold text-gray-800 focus:border-indigo-400 focus:outline-none"
+                        >
+                            {condos.map(c => (
+                                <option key={c.id} value={c.id}>{c.name}</option>
+                            ))}
+                        </select>
+                    ) : (
+                        <span className="text-sm font-bold text-gray-800">{condoName}</span>
+                    )}
                 </div>
 
                 <button

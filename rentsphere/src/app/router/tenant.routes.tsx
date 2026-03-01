@@ -23,6 +23,7 @@ import MaintenancePage from "../../features/tenant/pages/maintenance/pages/Maint
 import MyRepairs from "@/features/owner/pages/tenant/repairs/MyRepairs";
 import RepairDetail from "@/features/owner/pages/tenant/repairs/RepairDetail";
 import RepairCreate from "@/features/owner/pages/tenant/repairs/RepairCreate";
+import TenantProfilePage from "../../features/tenant/pages/profile/pages/TenantProfilePage";
 
 // ✅ Guard เดิม
 function RequireLineLogin({ children }: { children: React.ReactNode }) {
@@ -78,7 +79,7 @@ const tenantRoutes: RouteObject[] = [
       // ที่เหลือ placeholder กันหน้าอื่นพัง
       { path: "history", element: <ComingSoon title="History" /> },
       { path: "notifications", element: <ComingSoon title="Notifications" /> },
-      { path: "profile", element: <ComingSoon title="Profile" /> },
+      { path: "profile", element: <TenantProfilePage /> },
       { path: "maintenance", element: <MaintenancePage /> },
       { path: "billing", element: <ComingSoon title="Billing" /> },
 

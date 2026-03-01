@@ -11,16 +11,17 @@ import SupportModal from '../components/SupportModal';
 
 const TenantProfilePage: React.FC = () => {
   const navigate = useNavigate();
-  const { 
-    profile, 
-    loading, 
-    isEditModalOpen, 
-    isLogoutModalOpen, 
+  const {
+    profile,
+    loading,
+    isEditModalOpen,
+    isLogoutModalOpen,
     isSupportModalOpen,
-    toggleEditModal, 
-    toggleLogoutModal, 
+    toggleEditModal,
+    toggleLogoutModal,
     toggleSupportModal,
-    handleLogout 
+    handleLogout,
+    refreshProfile,
   } = useProfile();
 
   if (loading || !profile) {
@@ -35,8 +36,8 @@ const TenantProfilePage: React.FC = () => {
     <div className="min-h-screen bg-gradient-to-b from-[#f0f7ff] via-[#f0f5ff] to-white pb-32">
       {/* Header with Back Button and Centered Title */}
       <div className="px-6 pt-8 pb-4 flex items-center justify-between">
-        <button 
-          onClick={() => navigate('/home')} 
+        <button
+          onClick={() => navigate('/tenant/home')}
           className="p-2 rounded-xl bg-white shadow-sm border border-gray-100 text-gray-600 hover:bg-gray-50 transition-colors"
         >
           <ChevronLeft size={24} />
@@ -52,9 +53,9 @@ const TenantProfilePage: React.FC = () => {
 
       {/* Actions */}
       <div className="px-6">
-        <ProfileActionList 
-          onEdit={toggleEditModal} 
-          onLogout={toggleLogoutModal} 
+        <ProfileActionList
+          onEdit={toggleEditModal}
+          onLogout={toggleLogoutModal}
           onSupport={toggleSupportModal}
         />
       </div>
@@ -65,18 +66,20 @@ const TenantProfilePage: React.FC = () => {
       </p>
 
       {/* Modals */}
-      <EditProfileModal 
-        isOpen={isEditModalOpen} 
-        onClose={toggleEditModal} 
+      <EditProfileModal
+        isOpen={isEditModalOpen}
+        onClose={toggleEditModal}
+        profile={profile}
+        onSaved={refreshProfile}
       />
-      <LogoutConfirmModal 
-        isOpen={isLogoutModalOpen} 
-        onClose={toggleLogoutModal} 
-        onConfirm={handleLogout} 
+      <LogoutConfirmModal
+        isOpen={isLogoutModalOpen}
+        onClose={toggleLogoutModal}
+        onConfirm={handleLogout}
       />
-      <SupportModal 
-        isOpen={isSupportModalOpen} 
-        onClose={toggleSupportModal} 
+      <SupportModal
+        isOpen={isSupportModalOpen}
+        onClose={toggleSupportModal}
       />
     </div>
   );
