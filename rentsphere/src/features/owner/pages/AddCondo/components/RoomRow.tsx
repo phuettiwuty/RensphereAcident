@@ -15,7 +15,7 @@ type Props = {
 };
 
 /* ===== component ===== */
-export default function RoomRow({ room, onToggle, onDelete, onChangeNumber}: Props) {
+export default function RoomRow({ room, onToggle, onDelete, onChangeNumber }: Props) {
   return (
     <div
       style={{
@@ -28,6 +28,8 @@ export default function RoomRow({ room, onToggle, onDelete, onChangeNumber}: Pro
       <input
         value={room.number}
         onChange={(e) => onChangeNumber(e.target.value)}
+        title="เลขห้อง"
+        placeholder="เลขห้อง"
         style={{
           width: 80,
           height: 32,

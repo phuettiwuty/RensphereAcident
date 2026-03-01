@@ -1,17 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Room } from "../types/addCondo.types";
-import { getRooms, setRoomServices } from "../condoApi";
+import { getRooms, setRoomServices, getServices } from "../condoApi";
+import { useCondoWizardStore } from "../condoWizard.store";
 
-type ServiceOption = { id: number; label: string; price: number };
-
-const SERVICE_OPTIONS: ServiceOption[] = [
-    { id: 1, label: "ค่าอินเตอร์เน็ต (Internet)", price: 100 },
-    { id: 2, label: "ค่าฟิตเนส (Fitness)", price: 100 },
-];
+type ServiceOption = { id: string | number; label: string; price: number };
 
 export default function Step8_RoomService() {
     const nav = useNavigate();
+    const condoId = useCondoWizardStore((s) => s.condoId);
 
     // ======================
     // Local state (no store)
@@ -19,6 +16,7 @@ export default function Step8_RoomService() {
     const [floorCount, setFloorCount] = useState<number>(0);
     const [roomsPerFloor, setRoomsPerFloor] = useState<number[]>([]);
     const [rooms, setRooms] = useState<Room[]>([]);
+    const [serviceOptions, setServiceOptions] = useState<ServiceOption[]>([]);
 
     // ======================
     // TODO: API (backend will connect later)
@@ -28,12 +26,13 @@ export default function Step8_RoomService() {
     // - setRooms(...)
     // ======================
     useEffect(() => {
+        if (!condoId) return;
         let cancelled = false;
         async function load() {
             try {
-                const data = await getRooms();
+                const [roomData, serviceData] = await Promise.all([getRooms(), getServices()]);
                 if (cancelled) return;
-                const apiRooms: Room[] = (data.rooms || []).map((r: any) => ({
+                const apiRooms: Room[] = (roomData.rooms || []).map((r: any) => ({
                     id: r.id,
                     condoId: r.condo_id || r.condoId || "",
                     floor: r.floor,
@@ -46,13 +45,21 @@ export default function Step8_RoomService() {
                 const maxFloor = apiRooms.reduce((m, r) => Math.max(m, r.floor), 0);
                 setFloorCount(maxFloor);
                 setRooms(apiRooms);
+
+                // ✅ โหลดรายการบริการจาก DB
+                const opts: ServiceOption[] = (serviceData.services || []).map((s: any) => ({
+                    id: s.id,
+                    label: s.name || "",
+                    price: Number(s.price || 0),
+                }));
+                setServiceOptions(opts);
             } catch (e) {
-                console.error("load rooms error:", e);
+                console.error("load rooms/services error:", e);
             }
         }
         load();
         return () => { cancelled = true; };
-    }, []);
+    }, [condoId]);
 
     // ======================
     // Selection
@@ -96,8 +103,8 @@ export default function Step8_RoomService() {
 
     const selectedService = useMemo(() => {
         if (serviceId === "") return null;
-        return SERVICE_OPTIONS.find((x) => x.id === serviceId) ?? null;
-    }, [serviceId]);
+        return serviceOptions.find((x: ServiceOption) => String(x.id) === String(serviceId)) ?? null;
+    }, [serviceId, serviceOptions]);
 
     const openAssign = () => {
         if (selectedCount === 0) return;
@@ -108,12 +115,12 @@ export default function Step8_RoomService() {
     // ======================
     // Local update + TODO API
     // ======================
-    const setServiceForRooms = async (roomIds: string[], serviceId: number | null) => {
+    const setServiceForRooms = async (roomIds: string[], svcId: number | null) => {
         const ids = new Set(roomIds);
-        setRooms((prev) => prev.map((r) => (ids.has(r.id) ? { ...r, serviceId } : r)));
+        setRooms((prev) => prev.map((r) => (ids.has(r.id) ? { ...r, serviceId: svcId } : r)));
 
         try {
-            await setRoomServices(roomIds.map((id) => ({ roomId: id, serviceId: serviceId ? String(serviceId) : null })));
+            await setRoomServices(roomIds.map((id) => ({ roomId: id, serviceId: svcId ? String(svcId) : null })));
         } catch (e) {
             console.error("set room services error:", e);
         }
@@ -121,7 +128,7 @@ export default function Step8_RoomService() {
 
     const onSaveService = () => {
         if (!selectedService) return;
-        setServiceForRooms(selectedIds, selectedService.id);
+        setServiceForRooms(selectedIds, Number(selectedService.id));
         setOpenModal(false);
     };
 
@@ -130,9 +137,9 @@ export default function Step8_RoomService() {
         setOpenModal(false);
     };
 
-    const getService = (id: number | null | undefined) => {
+    const getService = (id: number | string | null | undefined) => {
         if (!id) return null;
-        return SERVICE_OPTIONS.find((x) => x.id === id) ?? null;
+        return serviceOptions.find((x) => String(x.id) === String(id)) ?? null;
     };
 
     return (
@@ -321,12 +328,13 @@ export default function Step8_RoomService() {
                                     const v = e.target.value;
                                     setServiceId(v === "" ? "" : Number(v));
                                 }}
+                                title="เลือกบริการ"
                                 className="w-full h-12 rounded-xl border border-gray-200 bg-white px-4 text-sm font-extrabold text-gray-900 shadow-sm
                            focus:outline-none focus:ring-4 focus:ring-blue-200/60 focus:border-blue-300"
                             >
                                 <option value="">เลือกบริการ</option>
-                                {SERVICE_OPTIONS.map((o) => (
-                                    <option key={o.id} value={String(o.id)}>
+                                {serviceOptions.map((o) => (
+                                    <option key={String(o.id)} value={String(o.id)}>
                                         {o.label} · {o.price.toLocaleString()} บาท
                                     </option>
                                 ))}

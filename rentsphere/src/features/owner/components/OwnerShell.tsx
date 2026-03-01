@@ -6,6 +6,7 @@ type OwnerShellProps = {
     title?: string;
     activeKey?: string;
     showSidebar?: boolean;
+    noScroll?: boolean;
     children: ReactNode;
     footer?: ReactNode;
 };
@@ -14,6 +15,7 @@ export default function OwnerShell({
     title,
     activeKey,
     showSidebar = true,
+    noScroll = false,
     children,
     footer,
 }: OwnerShellProps) {
@@ -42,7 +44,7 @@ export default function OwnerShell({
                 </header>
 
                 {/* Content */}
-                <div className="flex-1 overflow-y-auto p-8 pb-28">
+                <div className={`flex-1 ${noScroll ? 'overflow-hidden' : 'overflow-y-auto'} p-8 pb-28`}>
                     <div className="mx-auto w-full max-w-6xl">
                         {title ? (
                             <div className="mb-6 rounded-2xl border border-blue-200/60 bg-white/70 backdrop-blur-md shadow-[0_16px_40px_rgba(15,23,42,0.12)] overflow-hidden">

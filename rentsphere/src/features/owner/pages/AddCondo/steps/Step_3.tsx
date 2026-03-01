@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { addBankAccount } from "../condoApi";
-
+import { addBankAccount, getBankAccounts } from "../condoApi";
+import { useCondoWizardStore } from "../condoWizard.store";
 import { useBankAccountForm } from "../components/BankAccountForm";
 import BankAccountList from "../components/BankAccountList";
 import { BANK_OPTIONS } from "../constants/bankOptions";
@@ -15,6 +15,7 @@ type BankAccount = {
 
 export default function Step_3() {
   const nav = useNavigate();
+  const condoId = useCondoWizardStore((s) => s.condoId);
   const form = useBankAccountForm();
 
   const isFormValid =
@@ -24,6 +25,25 @@ export default function Step_3() {
 
   const [showSaved, setShowSaved] = useState(false);
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
+
+  // ✅ โหลดบัญชีธนาคารเดิมจาก DB
+  useEffect(() => {
+    if (!condoId) return;
+    let cancelled = false;
+    getBankAccounts()
+      .then((data) => {
+        if (cancelled) return;
+        const mapped: BankAccount[] = (data.accounts || []).map((a: any) => ({
+          id: a.id || Date.now(),
+          bank: a.bank || "",
+          accountName: a.account_name || "",
+          accountNo: a.account_no || "",
+        }));
+        setAccounts(mapped);
+      })
+      .catch((e) => console.error("load bank accounts error:", e));
+    return () => { cancelled = true; };
+  }, [condoId]);
 
   const handleAddAccount = async () => {
     if (!isFormValid) return;
@@ -95,6 +115,7 @@ export default function Step_3() {
                            focus:outline-none focus:ring-4 focus:ring-blue-200/60 focus:border-blue-300"
                 value={form.bank}
                 onChange={(e) => form.setBank(e.target.value)}
+                title="เลือกธนาคาร"
               >
                 <option value="">เลือกธนาคาร</option>
                 {BANK_OPTIONS.map((b) => (

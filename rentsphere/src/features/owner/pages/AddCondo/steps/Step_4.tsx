@@ -1,16 +1,47 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { createFloors } from "../condoApi";
+import { createFloors, getMyCondo, getRooms } from "../condoApi";
+import { useCondoWizardStore } from "../condoWizard.store";
 
 export default function Step_4() {
   const nav = useNavigate();
+  const condoId = useCondoWizardStore((s) => s.condoId);
 
   const [floorCount, setFloorCount] = useState<number | "">("");
   const [roomsPerFloorText, setRoomsPerFloorText] = useState<string[]>([]);
   const [roomErrors, setRoomErrors] = useState<Record<number, string>>({});
+  const [roomsExist, setRoomsExist] = useState(false);
 
   const hasRoomError = Object.keys(roomErrors).length > 0;
   const canGoNext = floorCount !== "" && !hasRoomError;
+
+  // ✅ โหลดข้อมูลชั้น/ห้องเดิมจาก DB
+  useEffect(() => {
+    if (!condoId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [condoData, roomData] = await Promise.all([getMyCondo(), getRooms()]);
+        if (cancelled) return;
+        const fc = condoData.condo?.floorCount || condoData.condo?.floor_count || 0;
+        const rooms = roomData.rooms || [];
+
+        if (fc > 0 && rooms.length > 0) {
+          const perFloor: string[] = [];
+          for (let f = 1; f <= fc; f++) {
+            const count = rooms.filter((r: any) => r.floor === f).length;
+            perFloor.push(String(count || 1));
+          }
+          setFloorCount(fc);
+          setRoomsPerFloorText(perFloor);
+          setRoomsExist(true);
+        }
+      } catch (e) {
+        console.error("load floor/room data error:", e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [condoId]);
 
   const roomsPerFloorNormalized = useMemo(() => {
     if (floorCount === "") return [];
@@ -96,13 +127,16 @@ export default function Step_4() {
   const handleNext = async () => {
     if (floorCount === "" || hasRoomError) return;
 
-    try {
-      await createFloors({
-        floorCount: Number(floorCount),
-        roomsPerFloor: roomsPerFloorNormalized,
-      });
-    } catch (e: any) {
-      console.error("create floors error:", e);
+    // ถ้าห้องมีอยู่แล้วใน DB => ไม่ต้อง create ซ้ำ
+    if (!roomsExist) {
+      try {
+        await createFloors({
+          floorCount: Number(floorCount),
+          roomsPerFloor: roomsPerFloorNormalized,
+        });
+      } catch (e: any) {
+        console.error("create floors error:", e);
+      }
     }
 
     nav("../step-5");
@@ -134,6 +168,7 @@ export default function Step_4() {
             <select
               value={floorCount}
               onChange={(e) => handleFloorChange(e.target.value === "" ? "" : Number(e.target.value))}
+              title="จำนวนชั้น"
               className="w-full h-14 rounded-2xl border border-gray-200 bg-[#fffdf2] px-5 text-xl font-extrabold text-gray-900 shadow-sm
                          focus:outline-none focus:ring-4 focus:ring-blue-200/60 focus:border-blue-300"
             >
@@ -176,6 +211,8 @@ export default function Step_4() {
                           inputMode="numeric"
                           pattern="[0-9]*"
                           value={roomText}
+                          title="จำนวนห้อง"
+                          placeholder="1"
                           onFocus={(e) => e.currentTarget.select()}
                           onClick={(e) => e.currentTarget.select()}
                           onChange={(e) => handleRoomTextChange(i, e.target.value)}

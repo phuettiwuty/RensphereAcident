@@ -17,12 +17,22 @@ function getAuth() {
     }
 }
 
+import { useCondoWizardStore } from "./condoWizard.store";
+
 function getCondoId(): string {
-    const raw = localStorage.getItem("rentsphere_condo_wizard");
-    if (!raw) return "";
+    // ✅ อ่านจาก Zustand store โดยตรง (in-memory, เร็วที่สุด)
+    const fromStore = useCondoWizardStore.getState().condoId;
+    console.log("[DEBUG] getCondoId() fromStore:", fromStore);
+    if (fromStore) return fromStore;
+    // fallback: อ่านจาก localStorage โดยตรง (กรณี store ยังไม่ถูก hydrate)
     try {
+        const raw = localStorage.getItem("rentsphere_condo_wizard");
+        console.log("[DEBUG] getCondoId() localStorage raw:", raw);
+        if (!raw) return "";
         const parsed = JSON.parse(raw);
-        return parsed?.state?.condoId || "";
+        const id = parsed?.state?.condoId || "";
+        console.log("[DEBUG] getCondoId() fromLocalStorage:", id);
+        return id;
     } catch {
         return "";
     }
@@ -41,6 +51,50 @@ async function handleRes<T>(res: Response): Promise<T> {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error((data as any)?.error || "API Error");
     return data as T;
+}
+
+/* ========== Step 0: Get Condo Detail ========== */
+export async function getCondoDetail() {
+    const condoId = getCondoId();
+    if (!condoId) return { ok: false, condo: null };
+    const res = await fetch(`${API}/api/v1/condos/${condoId}`, {
+        method: "GET",
+        headers: headers(),
+    });
+    return handleRes<{ ok: boolean; condo: any }>(res);
+}
+
+/* ========== Step 1: Get Services ========== */
+export async function getServices() {
+    const condoId = getCondoId();
+    if (!condoId) return { ok: false, services: [] };
+    const res = await fetch(`${API}/api/v1/condos/${condoId}/services`, {
+        method: "GET",
+        headers: headers(),
+    });
+    return handleRes<{ ok: boolean; services: any[] }>(res);
+}
+
+/* ========== Step 2: Get Utilities ========== */
+export async function getUtilities() {
+    const condoId = getCondoId();
+    if (!condoId) return { ok: false, configs: [] };
+    const res = await fetch(`${API}/api/v1/condos/${condoId}/utilities`, {
+        method: "GET",
+        headers: headers(),
+    });
+    return handleRes<{ ok: boolean; configs: any[] }>(res);
+}
+
+/* ========== Step 3: Get Bank Accounts ========== */
+export async function getBankAccounts() {
+    const condoId = getCondoId();
+    if (!condoId) return { ok: false, accounts: [] };
+    const res = await fetch(`${API}/api/v1/condos/${condoId}/bank-accounts`, {
+        method: "GET",
+        headers: headers(),
+    });
+    return handleRes<{ ok: boolean; accounts: any[] }>(res);
 }
 
 /* ========== Step 1: Services ========== */
@@ -114,6 +168,7 @@ export async function createFloors(payload: {
 
 export async function getRooms() {
     const condoId = getCondoId();
+    if (!condoId) return { ok: false, rooms: [] };
     const res = await fetch(`${API}/api/v1/condos/${condoId}/rooms`, {
         method: "GET",
         headers: headers(),

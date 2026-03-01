@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import type { Room, RoomStatus } from "../types/addCondo.types";
 import { getRooms, setRoomStatuses } from "../condoApi";
+import { useCondoWizardStore } from "../condoWizard.store";
 
 type NavState = {
     selectedRoomIds?: string[];
@@ -10,6 +11,7 @@ type NavState = {
 export default function Step7_Review() {
     const nav = useNavigate();
     const location = useLocation();
+    const condoId = useCondoWizardStore((s) => s.condoId);
 
     // ======================
     // Local state (no store)
@@ -37,6 +39,7 @@ export default function Step7_Review() {
     // - setSelectedRoomIds(...) (optional)
     // ======================
     useEffect(() => {
+        if (!condoId) return;
         let cancelled = false;
         async function load() {
             try {
@@ -64,7 +67,7 @@ export default function Step7_Review() {
         }
         load();
         return () => { cancelled = true; };
-    }, []);
+    }, [condoId]);
 
     useEffect(() => {
         setPickedIds(selectedRoomIds);

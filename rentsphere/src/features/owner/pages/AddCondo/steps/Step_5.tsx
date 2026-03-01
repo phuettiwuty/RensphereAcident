@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getRooms } from "../condoApi";
+import { useCondoWizardStore } from "../condoWizard.store";
 
 type RoomStatus = "VACANT" | "OCCUPIED";
 
@@ -63,6 +64,7 @@ function renumberFloorRooms(allRooms: Room[], floor: number): Room[] {
 
 export default function Step_5() {
   const nav = useNavigate();
+  const condoId = useCondoWizardStore((s) => s.condoId);
 
   // ======================
   // Local state
@@ -76,6 +78,7 @@ export default function Step_5() {
   // - setFloorCount, setRooms
   // ======================
   useEffect(() => {
+    if (!condoId) return;
     let cancelled = false;
     async function load() {
       try {
@@ -99,7 +102,7 @@ export default function Step_5() {
     }
     load();
     return () => { cancelled = true; };
-  }, []);
+  }, [condoId]);
 
   // Group rooms by floor (เหมือน Step6)
   const roomsByFloor = useMemo(() => {

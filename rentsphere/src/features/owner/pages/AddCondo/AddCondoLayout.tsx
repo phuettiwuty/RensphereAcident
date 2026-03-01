@@ -1,6 +1,9 @@
 import RentSphereLogo from "@/assets/brand/rentsphere-logo.png";
 import { useEffect, useState } from "react";
 import { Outlet, matchPath, useLocation, useNavigate } from "react-router-dom";
+import { useCondoWizardStore } from "./condoWizard.store";
+
+const API = import.meta.env.VITE_API_URL || "https://backendlinefacality.onrender.com";
 
 const MENU = [
     { label: "ค่าบริการ", path: "step-1" },
@@ -93,6 +96,51 @@ function buildDisplayName(me: MeResponse | null) {
 export default function AddCondoLayout() {
     const navigate = useNavigate();
     const { pathname } = useLocation();
+
+    const condoId = useCondoWizardStore((s) => s.condoId);
+    const setCondoId = useCondoWizardStore((s) => s.setCondoId);
+
+    // ✅ Auto-detect condoId: ถ้ายังไม่มี condoId → ดึงจาก /api/v1/condos/mine อัตโนมัติ
+    useEffect(() => {
+        if (condoId) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                let token = "";
+                try {
+                    const raw = localStorage.getItem("rentsphere_auth");
+                    if (raw) {
+                        const parsed = JSON.parse(raw);
+                        token = parsed?.state?.token || "";
+                    }
+                } catch { }
+                console.log("[AddCondoLayout] Auto-detect: token =", token ? "YES" : "NO");
+                if (!token) return;
+
+                const res = await fetch(`${API}/api/v1/condos/mine`, {
+                    method: "GET",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${token}`,
+                    },
+                });
+                console.log("[AddCondoLayout] /condos/mine status =", res.status);
+                if (!res.ok || cancelled) return;
+                const data = await res.json();
+                let condo: any = null;
+                if (data.condo) condo = data.condo;
+                else if (Array.isArray(data.condos) && data.condos.length > 0) condo = data.condos[0];
+
+                if (condo?.id && !cancelled) {
+                    console.log("[AddCondoLayout] Auto-detected condoId:", condo.id);
+                    setCondoId(condo.id);
+                }
+            } catch (e) {
+                console.error("[AddCondoLayout] auto-detect error:", e);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [condoId, setCondoId]);
 
     const isActive = (stepPath: string) =>
         !!matchPath({ path: `/owner/add-condo/${stepPath}` }, pathname);
