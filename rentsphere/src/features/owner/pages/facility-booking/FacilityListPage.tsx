@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import OwnerShell from "@/features/owner/components/OwnerShell";
-import { Plus } from "lucide-react";
+import { Plus, Building2 } from "lucide-react";
 
 import { facilityService } from "./types/facility.service";
 import type { Facility } from "./types/facility";
 import CreateFacilityModal, { type CreateFacilityPayload } from "./CreateFacilityModal";
+import { useAuthStore } from "@/features/auth/auth.store";
 
 import {
   Calendar,
@@ -23,7 +24,9 @@ import {
   RefreshCcw,
 } from "lucide-react";
 
-const API = "https://backendlinefacality.onrender.com";
+const API = import.meta.env.VITE_API_URL || "https://backendlinefacality.onrender.com";
+
+type CondoOption = { id: string; nameTh: string };
 
 
 
@@ -624,18 +627,50 @@ function FacilityBookingDashboard({
 
 // ---------------- Main page: list facilities + open dashboard ----------------
 export default function FacilityListPage() {
+  const token = useAuthStore((s) => s.token) || "";
+
+  // ---- condo selection ----
+  const [condos, setCondos] = useState<CondoOption[]>([]);
+  const [selectedCondoId, setSelectedCondoId] = useState<string>("");
+  const [condoLoading, setCondoLoading] = useState(true);
+
   const [items, setItems] = useState<Facility[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [open, setOpen] = useState(false);
 
   const [selectedFacility, setSelectedFacility] = useState<Facility | null>(null);
 
+  // โหลดรายการคอนโดของ owner
+  useEffect(() => {
+    (async () => {
+      try {
+        setCondoLoading(true);
+        const r = await fetch(`${API}/api/v1/condos/mine`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await r.json().catch(() => ({}));
+        const list: CondoOption[] = (data.condos || []).map((c: any) => ({
+          id: c.id,
+          nameTh: c.nameTh || c.name_th || c.name || "—",
+        }));
+        setCondos(list);
+        if (list.length > 0) setSelectedCondoId(list[0].id);
+      } catch {
+        setErr("โหลดรายการคอนโดไม่สำเร็จ");
+      } finally {
+        setCondoLoading(false);
+      }
+    })();
+  }, [token]);
+
+  // โหลด facilities เมื่อเลือก condo
   const refresh = async () => {
+    if (!selectedCondoId) return;
     setLoading(true);
     setErr("");
     try {
-      const data = await facilityService.getFacilities();
+      const data = await facilityService.getFacilities(selectedCondoId, token);
       setItems(data);
     } catch (e: any) {
       setErr(e?.message || "โหลดข้อมูลไม่สำเร็จ");
@@ -645,13 +680,15 @@ export default function FacilityListPage() {
   };
 
   useEffect(() => {
-    refresh();
-  }, []);
+    if (selectedCondoId) refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCondoId]);
 
   const onCreate = async (payload: CreateFacilityPayload) => {
+    if (!selectedCondoId) return;
     setErr("");
     try {
-      await facilityService.createFacility(payload);
+      await facilityService.createFacility(selectedCondoId, token, payload);
       setOpen(false);
       await refresh();
     } catch (e: any) {
@@ -674,6 +711,28 @@ export default function FacilityListPage() {
   return (
     <OwnerShell title="พื้นที่ส่วนกลาง" activeKey="common-area-booking" showSidebar>
       <div className="rounded-3xl border border-blue-100/60 bg-gradient-to-b from-[#EAF2FF] to-white/60 p-6">
+        {/* ===== เลือกคอนโด ===== */}
+        <div className="mb-6">
+          <label className="text-sm font-bold text-slate-600 mb-2 flex items-center gap-2">
+            <Building2 size={16} /> เลือกคอนโด
+          </label>
+          {condoLoading ? (
+            <div className="text-sm text-slate-400 font-bold">กำลังโหลด...</div>
+          ) : condos.length === 0 ? (
+            <div className="text-sm text-rose-500 font-bold">ยังไม่มีคอนโด กรุณาสร้างคอนโดก่อน</div>
+          ) : (
+            <select
+              value={selectedCondoId}
+              onChange={(e) => setSelectedCondoId(e.target.value)}
+              className="w-full max-w-md rounded-2xl border-2 border-blue-200 bg-white px-4 py-3 text-base font-bold text-slate-900 shadow-sm focus:border-indigo-400 focus:outline-none"
+            >
+              {condos.map((c) => (
+                <option key={c.id} value={c.id}>{c.nameTh}</option>
+              ))}
+            </select>
+          )}
+        </div>
+
         <div className="flex items-center justify-between gap-3">
           <div>
             <div className="text-xl font-extrabold text-slate-900">พื้นที่ส่วนกลาง</div>
@@ -682,7 +741,8 @@ export default function FacilityListPage() {
 
           <button
             onClick={() => setOpen(true)}
-            className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-white font-extrabold shadow hover:bg-indigo-700"
+            disabled={!selectedCondoId}
+            className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-white font-extrabold shadow hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Plus size={18} />
             เพิ่มพื้นที่

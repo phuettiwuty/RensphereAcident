@@ -1,32 +1,40 @@
 // facility.service.ts
 import type { CreateFacilityPayload } from "../CreateFacilityModal";
 
+const API = import.meta.env.VITE_API_URL || "https://backendlinefacality.onrender.com";
 
-const API = "https://backendlinefacality.onrender.com";
+function authHeaders(token: string) {
+  return {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
+  };
+}
 
 export const facilityService = {
-  async getFacilities() {
-    const r = await fetch(`${API}/admin/facilities`);
+  /** โหลด facilities ของ condo ที่เลือก */
+  async getFacilities(condoId: string, token: string) {
+    const r = await fetch(`${API}/api/v1/condos/${condoId}/facilities`, {
+      headers: authHeaders(token),
+    });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data?.error || "โหลดข้อมูลไม่สำเร็จ");
 
-    // ถ้า backend ส่ง snake_case กลับมา ให้ map เป็น camelCase ตรงนี้ด้วย (ถ้าจำเป็น)
     return (data.items || []).map((x: any) => ({
       id: x.id,
       name: x.name,
       description: x.description ?? "",
       capacity: x.capacity,
-      openTime: x.open_time,        // ✅ map
-      closeTime: x.close_time,      // ✅ map
-      slotMinutes: x.slot_minutes,  // ✅ map
-      isAutoApprove: x.is_auto_approve ?? x.isAutoApprove ?? false, // กันไว้
+      openTime: x.open_time,
+      closeTime: x.close_time,
+      slotMinutes: x.slot_minutes,
+      isAutoApprove: x.is_auto_approve ?? x.isAutoApprove ?? false,
       active: x.active ?? true,
       type: x.type,
     }));
   },
 
-  async createFacility(payload: CreateFacilityPayload) {
-    // ✅ แปลง camelCase -> snake_case ให้ backend
+  /** สร้าง facility ใหม่ภายใต้ condo */
+  async createFacility(condoId: string, token: string, payload: CreateFacilityPayload) {
     const body = {
       name: payload.name,
       type: payload.type,
@@ -37,14 +45,11 @@ export const facilityService = {
       is_auto_approve: payload.isAutoApprove,
       description: payload.description ?? null,
       active: payload.active ?? true,
-      // dorm_id: "...", // ถ้า backend บังคับ dorm_id ค่อยใส่เพิ่ม
     };
 
-    const r = await fetch(`${API}/admin/facilities`, {
+    const r = await fetch(`${API}/api/v1/condos/${condoId}/facilities`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: authHeaders(token),
       body: JSON.stringify(body),
     });
 
