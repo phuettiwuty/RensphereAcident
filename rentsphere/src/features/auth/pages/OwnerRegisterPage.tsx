@@ -181,8 +181,21 @@ const OwnerRegisterPage: React.FC = () => {
 
       navigate("/auth/owner/verify-email", { replace: true });
     } catch (err: any) {
-
       const msg = err?.message || "สมัครสมาชิกไม่สำเร็จ";
+
+      // ถ้าเมลซ้ำ (409) → ไปหน้า verify ได้เลย (อาจยัง unverified)
+      if (msg === "email_already_used") {
+        setStart({
+          requestId: "resend",
+          email: payload.email,
+          phone: payload.phone,
+          channel: "EMAIL",
+        });
+        toast("อีเมลนี้เคยสมัครแล้ว ส่ง OTP ใหม่ได้ที่หน้าถัดไป", { icon: "📧" });
+        navigate("/auth/owner/verify-email", { replace: true });
+        return;
+      }
+
       toast.error(msg);
     } finally {
       setLoading(false);
