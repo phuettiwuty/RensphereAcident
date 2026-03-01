@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { addBankAccount } from "../condoApi";
 
 import { useBankAccountForm } from "../components/BankAccountForm";
 import BankAccountList from "../components/BankAccountList";
@@ -24,8 +25,18 @@ export default function Step_3() {
   const [showSaved, setShowSaved] = useState(false);
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
 
-  const handleAddAccount = () => {
+  const handleAddAccount = async () => {
     if (!isFormValid) return;
+
+    try {
+      await addBankAccount({
+        bank: form.bank.trim(),
+        accountName: form.accountName.trim(),
+        accountNo: form.accountNo.trim(),
+      });
+    } catch (e: any) {
+      console.error("save bank account error:", e);
+    }
 
     setAccounts((prev) => [
       ...prev,

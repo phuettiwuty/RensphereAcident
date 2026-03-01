@@ -19,7 +19,7 @@ import Step_5 from "@/features/owner/pages/AddCondo/steps/Step_5";
 import BillingPage from "@/features/owner/pages/Billing/BillingPage";
 import CondoHomePage from "@/features/owner/pages/Condo/CondoHomePage";
 import DashboardPage from "@/features/owner/pages/Dashboard/DashboardPage";
-import MaintenancePage from "@/features/owner/pages/Maintenance/MaintenancePage";
+import MaintenancePage from "@/features/owner/pages/Maintenance/AdminRepairs";
 import MeterPage from "@/features/owner/pages/Meter/MeterPage";
 import MeterPage2 from "@/features/owner/pages/Meter/MeterPage_2";
 import ParcelPage from "@/features/owner/pages/Parcel/ParcelPage";
@@ -32,13 +32,17 @@ import RoomMeterPage from "@/features/owner/pages/Rooms/RoomMeterPage";
 import RoomsPage from "@/features/owner/pages/Rooms/RoomsPage";
 import TenantAccessCodePage from "@/features/owner/pages/Rooms/TenantAccessCodePage";
 import SettingsPage from "@/features/owner/pages/Settings/SettingsPage";
-
+import AdminRepairs from "@/features/owner/pages/Maintenance/AdminRepairs";
 // ===== Facility Booking pages =====
 
-import FacilityListPage from "@/features/owner/pages/facility-booking/pages/FacilityListPage";
-import FacilityDetailPage from "@/features/owner/pages/facility-booking/pages/FacilityDetailPage";
-import BookingDetailPage from "@/features/owner/pages/facility-booking/pages/BookingDetailPage";
-import BookingHistoryPage from "@/features/owner/pages/facility-booking/pages/BookingHistoryPage";
+
+import AdminParcel from "@/features/owner/pages/Parcel/AdminParcel";
+import RepairCreate from "@/features/owner/pages/tenant/repairs/RepairCreate";
+import LineLogin from "@/features/owner/pages/tenant/Linesetup/LineLogin";
+import LineLoginSuccess from "@/features/owner/pages/tenant/Linesetup/LineLoginSuccess";
+import DormRegister from "@/features/owner/pages/tenant/Linesetup/DormRegister";
+import DormLink from "@/features/owner/pages/tenant/Linesetup/DormLink";
+import FacilityListPage from "@/features/owner/pages/facility-booking/FacilityListPage";
 
 
 const ownerRoutes: RouteObject[] = [
@@ -92,11 +96,7 @@ const ownerRoutes: RouteObject[] = [
       // ===== Common Area / Facility Booking =====
       {
         path: "common-area-booking",
-        children: [
-          { index: true, element: <FacilityListPage /> },
-          { path: ":facilityId", element: <FacilityDetailPage /> },
-          { path: ":facilityId/bookings/:bookingId", element: <BookingDetailPage /> },
-          { path: "history", element: <BookingHistoryPage /> },
+        children: [{ index: true, element: <FacilityListPage /> },
         ],
       },
 
@@ -104,6 +104,42 @@ const ownerRoutes: RouteObject[] = [
       { path: "*", element: <Navigate to="dashboard" replace /> },
     ],
   },
+
+
+  {
+    path: "/owner/admin-repairs",
+    element: <AdminRepairs />,
+  },
+
+  {
+    path: "/owner/admin/parcel",
+    element: <AdminParcel />,
+  },
+
+  {
+    path: "/owner/repair-create",
+    element: <RepairCreate />,
+  },
+
+  {
+    path: "/owner/line-login",
+    element: <LineLogin />,
+  },
+  {
+    path: "/owner/line-login-success",
+    element: <LineLoginSuccess />,
+  },
+
+  {
+    path: "/tenant/dorm-register",
+    element: <DormRegister />,
+  },
+  {
+    path: "/owner/dorm-link",
+    element: <DormLink />,
+  },
+
+
 ];
 
 export default ownerRoutes;

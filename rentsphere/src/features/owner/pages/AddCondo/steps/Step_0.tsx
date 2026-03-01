@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import CondoInfoSection from "../components/CondoInfoSection";
 import OtherDetailsSection from "../components/OtherDetailsSection";
 import PaymentSection from "../components/PaymentSection";
+import { useAuthStore } from "@/features/auth/auth.store";
+import { useCondoWizardStore } from "../condoWizard.store";
 
 interface FormData {
   logoFile: File | null;
@@ -42,6 +44,7 @@ const normalizeMoney = (v: string) => {
   return Number.isFinite(n) ? n : undefined;
 };
 
+const API = import.meta.env.VITE_API_URL || "https://backendlinefacality.onrender.com";
 
 function buildCreateCondoFormData(form: FormData) {
   const payload: CreateCondoPayload = {
@@ -57,20 +60,18 @@ function buildCreateCondoFormData(form: FormData) {
   };
 
   const fd = new FormData();
-  fd.append("payload", JSON.stringify(payload)); // backend parse JSON string
+  fd.append("payload", JSON.stringify(payload));
   if (form.logoFile) fd.append("logo", form.logoFile);
   return fd;
 }
 
 /* ===== Backend call  ===== */
-async function createCondo(form: FormData): Promise<{ condoId: string }> {
-  // TODO: POST /api/owner/condos
-  // รับเป็น multipart
-  // payload: json string
-  // logo: file
-  const res = await fetch("/api/owner/condos", {
+async function createCondo(form: FormData, token: string): Promise<{ condoId: string }> {
+  const res = await fetch(`${API}/api/v1/condos`, {
     method: "POST",
-    credentials: "include",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
     body: buildCreateCondoFormData(form),
   });
 
@@ -78,8 +79,8 @@ async function createCondo(form: FormData): Promise<{ condoId: string }> {
     let msg = "สร้างคอนโดไม่สำเร็จ";
     try {
       const data = await res.json();
-      msg = data?.message ?? msg;
-    } catch {}
+      msg = data?.error || data?.message || msg;
+    } catch { }
     throw new Error(msg);
   }
 
@@ -165,9 +166,13 @@ export default function Step_0() {
     setSubmitError(null);
 
     try {
-      const { condoId } = await createCondo(formData);
+      const token = useAuthStore.getState().token;
+      if (!token) throw new Error("กรุณาเข้าสู่ระบบก่อน");
 
-      nav("/owner/add-condo/step-1", { state: { condoId } });
+      const { condoId } = await createCondo(formData, token);
+
+      useCondoWizardStore.getState().setCondoId(condoId);
+      nav("/owner/add-condo/step-1");
     } catch (e: any) {
       setSubmitError(e?.message ?? "เกิดข้อผิดพลาด");
     } finally {

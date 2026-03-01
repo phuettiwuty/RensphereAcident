@@ -204,30 +204,82 @@ type DashboardResponse = {
 type CondoLite = { id: string; name: string };
 
 /* ================= Backend calls (แก้ URLให้ตรง) ================= */
+const API = import.meta.env.VITE_API_URL || "https://backendlinefacality.onrender.com";
+
+function getAuthToken(): string {
+    try {
+        const raw = localStorage.getItem("rentsphere_auth");
+        if (!raw) return "";
+        const parsed = JSON.parse(raw);
+        return parsed?.state?.token || "";
+    } catch {
+        return "";
+    }
+}
+
+function authHeaders() {
+    const token = getAuthToken();
+    return {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+}
+
 async function fetchMyCondos(): Promise<CondoLite[]> {
-    const res = await fetch("/api/owner/condos", {
+    const res = await fetch(`${API}/api/v1/condos/mine`, {
         method: "GET",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
     });
     if (!res.ok) return [];
     const data = await res.json();
-    if (Array.isArray(data)) return data.map((x: any) => ({ id: String(x.id), name: String(x.name) }));
-    if (Array.isArray(data?.items)) return data.items.map((x: any) => ({ id: String(x.id), name: String(x.name) }));
-    return [];
+
+    const list: any[] = [];
+    if (data.condo) list.push(data.condo);
+    if (Array.isArray(data.condos)) list.push(...data.condos);
+    if (Array.isArray(data)) list.push(...data);
+
+    return list.map((x: any) => ({
+        id: String(x.id),
+        name: String(x.name_th || x.nameTh || x.name || "—"),
+    }));
 }
 
 async function fetchDashboard(condoId: string): Promise<DashboardResponse> {
-    // แก้ endpoint ตรงนี้ให้ตรง backend
-    // ex: GET /api/owner/condos/:id/dashboard
-    const res = await fetch(`/api/owner/condos/${encodeURIComponent(condoId)}/dashboard`, {
+    // ดึงข้อมูลจาก condo + rooms เพื่อสร้าง summary
+    const roomsRes = await fetch(`${API}/api/v1/condos/${condoId}/rooms`, {
         method: "GET",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
     });
+    if (!roomsRes.ok) throw new Error("โหลดข้อมูล Dashboard ไม่สำเร็จ");
+    const roomsData = await roomsRes.json();
+    const rooms: any[] = roomsData.rooms || [];
 
-    if (!res.ok) throw new Error("โหลดข้อมูล Dashboard ไม่สำเร็จ");
-    return (await res.json()) as DashboardResponse;
+    // ดึงชื่อคอนโด
+    const condos = await fetchMyCondos();
+    const condo = condos.find((c) => c.id === condoId);
+    const condoName = condo?.name || "—";
+
+    const roomsTotal = rooms.length;
+    const roomsActive = rooms.filter((r: any) => r.is_active !== false && r.isActive !== false).length;
+    const occupiedRooms = rooms.filter((r: any) => r.status === "OCCUPIED").length;
+    const vacantRooms = rooms.filter((r: any) => r.status === "VACANT" || !r.status).length;
+
+    const prices = rooms
+        .map((r: any) => Number(r.price))
+        .filter((n) => Number.isFinite(n) && n > 0);
+    const avgRentPrice = prices.length > 0 ? prices.reduce((a, b) => a + b, 0) / prices.length : 0;
+
+    return {
+        summary: {
+            condoId,
+            condoName,
+            roomsTotal,
+            roomsActive,
+            occupiedRooms,
+            vacantRooms,
+            avgRentPrice,
+        },
+    };
 }
 
 /* ================= Page ================= */

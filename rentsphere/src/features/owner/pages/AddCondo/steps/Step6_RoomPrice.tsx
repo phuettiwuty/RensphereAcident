@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { getRooms, setRoomPrices } from "../condoApi";
 
 import FloorSection from "../components/FloorSection";
 import SetRoomPriceModal from "../components/SetRoomPriceModal";
@@ -22,6 +23,30 @@ export default function Step6RoomPrice() {
     // - setFloorCount, setRooms
     // ======================
     useEffect(() => {
+        let cancelled = false;
+        async function load() {
+            try {
+                const data = await getRooms();
+                if (cancelled) return;
+                const apiRooms: Room[] = (data.rooms || []).map((r: any) => ({
+                    id: r.id,
+                    condoId: r.condo_id || r.condoId || "",
+                    floor: r.floor,
+                    roomNo: r.room_no || r.roomNo || "",
+                    price: r.price != null ? Number(r.price) : null,
+                    serviceId: r.service_id ?? r.serviceId ?? null,
+                    isActive: r.is_active ?? r.isActive ?? true,
+                    status: r.status || "VACANT",
+                }));
+                const maxFloor = apiRooms.reduce((m, r) => Math.max(m, r.floor), 0);
+                setFloorCount(maxFloor);
+                setRooms(apiRooms);
+            } catch (e) {
+                console.error("load rooms error:", e);
+            }
+        }
+        load();
+        return () => { cancelled = true; };
     }, []);
 
     // Group rooms by floor
@@ -50,12 +75,15 @@ export default function Step6RoomPrice() {
     };
 
     // Apply price to selected rooms
-    const setPriceForRooms = (roomIds: string[], price: number | null) => {
+    const setPriceForRooms = async (roomIds: string[], price: number | null) => {
         const ids = new Set(roomIds);
         setRooms((prev) => prev.map((r) => (ids.has(r.id) ? { ...r, price } : r)));
 
-        // TODO: API
-        // await api.setRoomPrices({ roomIds, price })
+        try {
+            await setRoomPrices(roomIds.map((id) => ({ roomId: id, price: price ?? 0 })));
+        } catch (e) {
+            console.error("set room prices error:", e);
+        }
     };
 
     const disableSetPrice = selectedRoomIds.length === 0;

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { createFloors } from "../condoApi";
 
 export default function Step_4() {
   const nav = useNavigate();
@@ -95,13 +96,14 @@ export default function Step_4() {
   const handleNext = async () => {
     if (floorCount === "" || hasRoomError) return;
 
-    // ======================
-    // TODO: API (backend will connect later)
-    // 1) POST/PUT floor config
-    //    { floorCount, roomsPerFloor: roomsPerFloorNormalized, totalRooms }
-    // 2) หลัง backend บันทึกสำเร็จ -> ไป step-5
-    // ======================
-    // await api.saveFloorConfig({ floorCount, roomsPerFloor: roomsPerFloorNormalized, totalRooms })
+    try {
+      await createFloors({
+        floorCount: Number(floorCount),
+        roomsPerFloor: roomsPerFloorNormalized,
+      });
+    } catch (e: any) {
+      console.error("create floors error:", e);
+    }
 
     nav("../step-5");
   };

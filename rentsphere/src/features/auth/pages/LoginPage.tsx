@@ -17,11 +17,11 @@ type LoginResponse = {
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
- 
+
 
   const setAuth = useAuthStore((s) => s.setAuth);
 
-  const [identifier, setIdentifier] = useState(""); 
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,25 +36,25 @@ const LoginPage: React.FC = () => {
     "w-full max-w-xl rounded-3xl bg-white/65 backdrop-blur-xl border border-white/60 " +
     "shadow-[0_24px_60px_rgba(15,23,42,0.18)] p-10";
 
-  async function handleLogin(){
+  async function handleLogin() {
     try {
       setLoading(true);
       setError(null);
 
-      
+
       const payload = {
         email: identifier.trim(),
         password,
       };
 
-      const data = await api<LoginResponse>("/auth/login",{
+      const data = await api<LoginResponse>("/api/v1/auth/login", {
         method: "POST",
         body: JSON.stringify(payload),
       });
 
       setAuth(data.token, data.user);
 
-      
+
       if (data.user.role === "OWNER") navigate("/owner/condo");
       else if (data.user.role === "TENANT") navigate("/tenant");
       else navigate("/admin");
@@ -65,9 +65,9 @@ const LoginPage: React.FC = () => {
     }
   }
 
-  function onSubmit(e: React.FormEvent){
+  function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!identifier.trim()){
+    if (!identifier.trim()) {
       setError("กรุณากรอกอีเมล");
       return;
     }
@@ -80,7 +80,7 @@ const LoginPage: React.FC = () => {
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen w-full">
-     
+
       <div className="hidden md:flex w-7/12 cosmic-gradient flex-col items-center justify-center relative overflow-hidden">
         <CondoBackground />
         <Meteors />
@@ -103,7 +103,7 @@ const LoginPage: React.FC = () => {
         </div>
       </div>
 
-     
+
       <div className="flex-1 relative overflow-hidden flex items-center justify-center p-8">
         <SaaSBackground />
 
@@ -152,9 +152,8 @@ const LoginPage: React.FC = () => {
             <button
               type="submit"
               disabled={loading}
-              className={`w-full max-w-md py-4 btn-auth text-white rounded-2xl font-bold text-lg shadow-lg ${
-                loading ? "opacity-70 cursor-not-allowed" : ""
-              }`}
+              className={`w-full max-w-md py-4 btn-auth text-white rounded-2xl font-bold text-lg shadow-lg ${loading ? "opacity-70 cursor-not-allowed" : ""
+                }`}
             >
               {loading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
             </button>
@@ -164,13 +163,13 @@ const LoginPage: React.FC = () => {
             <div className="flex items-center justify-between text-[11px] pt-4 border-t border-slate-200">
               <div className="text-slate-600">
                 สมาชิกใหม่?{" "}
-               <button
-                      type="button"
-                      onClick={() => navigate("/auth/owner/register")}
-                      className="text-blue-700 font-bold"
-                    >
-                      สมัครสมาชิกเพื่อเข้าใช้งานระบบ
-                    </button>
+                <button
+                  type="button"
+                  onClick={() => navigate("/auth/owner/register")}
+                  className="text-blue-700 font-bold"
+                >
+                  สมัครสมาชิกเพื่อเข้าใช้งานระบบ
+                </button>
 
               </div>
 

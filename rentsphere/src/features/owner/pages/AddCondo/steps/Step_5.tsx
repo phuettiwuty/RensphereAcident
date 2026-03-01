@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { getRooms } from "../condoApi";
 
 type RoomStatus = "VACANT" | "OCCUPIED";
 
@@ -75,11 +76,29 @@ export default function Step_5() {
   // - setFloorCount, setRooms
   // ======================
   useEffect(() => {
-    // Ex:
-    // const mockFloorCount = 3;
-    // const mockRoomsPerFloor = [4, 4, 4];
-    // setFloorCount(mockFloorCount);
-    // setRooms(buildRooms(mockFloorCount, mockRoomsPerFloor));
+    let cancelled = false;
+    async function load() {
+      try {
+        const data = await getRooms();
+        if (cancelled) return;
+        const apiRooms: Room[] = (data.rooms || []).map((r: any) => ({
+          id: r.id,
+          floor: r.floor,
+          roomNo: r.room_no || r.roomNo || `${r.floor}${String(r.floor).padStart(2, "0")}`,
+          price: r.price ?? null,
+          serviceId: r.service_id ?? r.serviceId ?? null,
+          isActive: r.is_active ?? r.isActive ?? true,
+          status: r.status || "VACANT",
+        }));
+        const maxFloor = apiRooms.reduce((m, r) => Math.max(m, r.floor), 0);
+        setFloorCount(maxFloor);
+        setRooms(apiRooms);
+      } catch (e) {
+        console.error("load rooms error:", e);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
   }, []);
 
   // Group rooms by floor (เหมือน Step6)

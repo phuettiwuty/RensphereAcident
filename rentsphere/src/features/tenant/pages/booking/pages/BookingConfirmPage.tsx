@@ -1,53 +1,107 @@
-import React, { useState, useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { ChevronLeft, MapPin, Calendar, Clock, User, Check, Sofa } from 'lucide-react';
-import type { Facility } from '../types/facility.types';
-import { getFacilities, saveBooking } from '../services/booking.service';
-import { BOOKING_TEXT } from '../constants/bookingText';
-import type { BookingRecord } from '../types/booking.types';
+import React, { useState, useEffect, useMemo } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { ChevronLeft, MapPin, Calendar, Clock, User, Check, Sofa } from "lucide-react";
+import type { Facility } from "../types/facility.types";
+import { getFacilities, saveBooking } from "../services/booking.service";
+import { BOOKING_TEXT } from "../constants/bookingText";
+import type { BookingRecord } from "../types/booking.types";
+
+const API = "https://backendlinefacality.onrender.com";
+
+function formatThaiDateFromYmd(ymd: string) {
+  // ymd: "YYYY-MM-DD"
+  try {
+    // บังคับเวลาไทยให้เสถียร (กันเลื่อนวัน)
+    const d = new Date(`${ymd}T00:00:00+07:00`);
+    return d.toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" });
+  } catch {
+    return ymd;
+  }
+}
 
 const BookingConfirmPage: React.FC = () => {
   const navigate = useNavigate();
-  const { state } = useLocation();
+  const { state } = useLocation() as any;
+
   const [facility, setFacility] = useState<Facility | null>(null);
   const [agreed, setAgreed] = useState(false);
 
+  // ✅ ชื่อจริงจาก backend
+  const [userName, setUserName] = useState<string>("");
+
+  const displayDate = useMemo(() => {
+    return state?.date ? formatThaiDateFromYmd(state.date) : "";
+  }, [state?.date]);
+
   useEffect(() => {
     if (!state) {
-      navigate('/tenant/booking');
+      navigate("/tenant/booking");
       return;
     }
-    getFacilities().then(all => {
-      const match = all.find(f => f.id === state.facilityId);
+
+    // โหลด facility
+    getFacilities().then((all) => {
+      const match = all.find((f) => f.id === state.facilityId);
       if (match) setFacility(match);
     });
+
+    // ✅ โหลดชื่อผู้จองจริงจาก lineUserId
+    const lineUserId = localStorage.getItem("lineUserId") || "";
+    if (!lineUserId) return;
+
+    (async () => {
+      try {
+        const r = await fetch(`${API}/dorm/status?lineUserId=${encodeURIComponent(lineUserId)}`);
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data?.error || "โหลดข้อมูลผู้ใช้ไม่สำเร็จ");
+
+        // backend ของเธอคืน dormUser.full_name อยู่แล้ว
+        const fullName = data?.dormUser?.full_name || "";
+        setUserName(fullName);
+      } catch {
+        // ถ้าโหลดไม่ได้ ให้ fallback เป็นคำทั่วไป
+        setUserName("");
+      }
+    })();
   }, [state, navigate]);
 
   if (!state || !facility) return null;
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (!agreed) return;
+
     const newRecord: BookingRecord = {
-      id: Math.random().toString(36).substr(2, 9),
+      id: Math.random().toString(36).substring(2, 11),
       facilityId: facility.id,
       facilityName: facility.name,
       imageUrl: facility.imageUrl,
       date: state.date,
-      displayDate: state.date,
+      displayDate: displayDate || state.date,
       slots: state.slots,
-      userName: "คุณกิตติเดช สุขสรรค์",
-      status: 'BOOKED',
-      createdAt: new Date().toISOString()
+      userName: userName || "ผู้ใช้งาน",
+      status: "BOOKED",
+      createdAt: new Date().toISOString(),
     };
-    saveBooking(newRecord);
-    navigate('/tenant/booking/success');
+
+    try {
+      await saveBooking(newRecord);
+      navigate("/tenant/booking/success");
+    } catch (e: any) {
+      alert(e?.message || "จองไม่สำเร็จ");
+    }
   };
+
+
+  ;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#f0f7ff] via-[#f0f5ff] to-white pb-32">
       {/* Header */}
       <div className="px-6 pt-10 pb-4 flex items-center justify-between">
-        <button onClick={() => navigate(-1)} aria-label="ย้อนกลับ" className="p-2 rounded-xl bg-white/40 backdrop-blur-md text-gray-800 active:scale-90 transition-transform">
+        <button
+          onClick={() => navigate(-1)}
+          className="p-2 rounded-xl bg-white/40 backdrop-blur-md text-gray-800 active:scale-90 transition-transform"
+        >
           <ChevronLeft size={24} />
         </button>
         <h1 className="text-xl font-black text-gray-800 tracking-tight">ยืนยันการจอง</h1>
@@ -71,6 +125,7 @@ const BookingConfirmPage: React.FC = () => {
         {/* Summary Details */}
         <div className="bg-white/60 backdrop-blur-md rounded-[2.5rem] p-7 border border-white shadow-xl shadow-blue-900/5">
           <h3 className="font-black text-gray-500 text-base uppercase tracking-[0.15em] mb-6">สรุปการจอง</h3>
+
           <div className="space-y-5">
             <div className="flex gap-4">
               <div className="w-10 h-10 bg-[#135ced]/10 rounded-2xl flex items-center justify-center text-[#135ced] shadow-sm shrink-0">
@@ -80,30 +135,39 @@ const BookingConfirmPage: React.FC = () => {
                 <p className="text-gray-700 font-bold text-sm">สถานที่: {facility.name}</p>
               </div>
             </div>
+
             <div className="flex gap-4">
               <div className="w-10 h-10 bg-[#135ced]/10 rounded-2xl flex items-center justify-center text-[#135ced] shadow-sm shrink-0">
                 <Calendar size={20} />
               </div>
               <div>
-                <p className="text-gray-700 font-bold text-sm">{state.date}</p>
+                {/* ✅ ใช้วันที่จริง */}
+                <p className="text-gray-700 font-bold text-sm">{displayDate}</p>
               </div>
             </div>
+
             <div className="flex gap-4">
               <div className="w-10 h-10 bg-[#135ced]/10 rounded-2xl flex items-center justify-center text-[#135ced] shadow-sm shrink-0">
                 <Clock size={20} />
               </div>
               <div className="space-y-0.5">
                 {state.slots.map((s: string) => (
-                  <p key={s} className="text-gray-700 font-bold text-sm">{s}</p>
+                  <p key={s} className="text-gray-700 font-bold text-sm">
+                    {s}
+                  </p>
                 ))}
               </div>
             </div>
+
             <div className="flex gap-4">
               <div className="w-10 h-10 bg-[#135ced]/10 rounded-2xl flex items-center justify-center text-[#135ced] shadow-sm shrink-0">
                 <User size={20} />
               </div>
               <div>
-                <p className="text-gray-700 font-bold text-sm">ผู้จอง: คุณกิตติเดช สุขสรรค์</p>
+                {/* ✅ ใช้ชื่อจริง */}
+                <p className="text-gray-700 font-bold text-sm">
+                  ผู้จอง: {userName ? userName : "ผู้ใช้งาน"}
+                </p>
               </div>
             </div>
           </div>
@@ -115,18 +179,19 @@ const BookingConfirmPage: React.FC = () => {
           <div className="space-y-3 mb-8">
             {BOOKING_TEXT.RULES_LIST.map((rule, idx) => (
               <div key={idx} className="flex items-start gap-3">
-                <div className="mt-0.5 text-[#135ced] shrink-0"><Check size={18} strokeWidth={3} /></div>
+                <div className="mt-0.5 text-[#135ced] shrink-0">
+                  <Check size={18} strokeWidth={3} />
+                </div>
                 <p className="text-gray-500 text-xs font-bold leading-relaxed">{rule}</p>
               </div>
             ))}
           </div>
 
-          <button
-            onClick={() => setAgreed(!agreed)}
-            className="flex items-center gap-3 active:opacity-70 transition-opacity"
-          >
-            <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${agreed ? 'bg-[#135ced] border-[#135ced] text-white shadow-md' : 'border-[#135ced]/30 bg-white/50'
-              }`}>
+          <button onClick={() => setAgreed(!agreed)} className="flex items-center gap-3 active:opacity-70 transition-opacity">
+            <div
+              className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${agreed ? "bg-[#135ced] border-[#135ced] text-white shadow-md" : "border-[#135ced]/30 bg-white/50"
+                }`}
+            >
               {agreed && <Check size={14} strokeWidth={4} />}
             </div>
             <span className="text-[11px] font-bold text-gray-400">ฉันได้อ่านและยอมรับกฎและเงื่อนไขแล้ว</span>
@@ -139,24 +204,16 @@ const BookingConfirmPage: React.FC = () => {
             disabled={!agreed}
             onClick={handleConfirm}
             className={`w-full py-5 font-black text-xl rounded-[2rem] transition-all duration-300 shadow-2xl ${agreed
-              ? 'bg-gradient-to-r from-[#135ced] to-[#2467ed] text-white shadow-blue-500/30 active:scale-95'
-              : 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none'
+                ? "bg-gradient-to-r from-[#135ced] to-[#2467ed] text-white shadow-blue-500/30 active:scale-95"
+                : "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"
               }`}
           >
             ยืนยันการจอง
           </button>
         </div>
       </div>
-
-      {/* Cityscape decorative background (Subtle) */}
-      <div className="fixed bottom-0 left-0 w-full opacity-5 pointer-events-none -z-10">
-        <svg viewBox="0 0 1440 320" xmlns="http://www.w3.org/2000/svg">
-          <path fill="#000" d="M0,288L48,272C96,256,192,224,288,197.3C384,171,480,149,576,165.3C672,181,768,235,864,250.7C960,267,1056,245,1152,224C1248,203,1344,181,1392,170.7L1440,160L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z"></path>
-        </svg>
-      </div>
     </div>
   );
 };
 
 export default BookingConfirmPage;
-

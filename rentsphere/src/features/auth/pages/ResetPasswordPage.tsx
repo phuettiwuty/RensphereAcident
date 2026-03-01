@@ -15,11 +15,11 @@ function isStrongEnough(pw: string) {
   const hasSymbol = /[^A-Za-z0-9]/.test(pw);
   const score = [lengthOk, hasLower, hasUpper, hasNumber, hasSymbol].filter(Boolean).length;
 
- 
+
   const level =
     score <= 2 ? "weak" :
-    score === 3 ? "medium" :
-    "strong";
+      score === 3 ? "medium" :
+        "strong";
 
   return {
     lengthOk,
@@ -28,7 +28,7 @@ function isStrongEnough(pw: string) {
     hasNumber,
     hasSymbol,
     score,
-    level, 
+    level,
   };
 }
 
@@ -36,10 +36,11 @@ const ResetPasswordPage: React.FC = () => {
   const navigate = useNavigate();
   const [params] = useSearchParams();
 
-  
+
   const basePath = "/auth/owner";
 
   const requestId = params.get("requestId") || "";
+  const emailForReset = params.get("email") || "";
   const channel = (params.get("channel") as "EMAIL" | "PHONE" | null) || "EMAIL";
 
   const [code, setCode] = useState("");
@@ -61,7 +62,7 @@ const ResetPasswordPage: React.FC = () => {
     if (code.trim().length !== 6) return false;
     if (password.length < 8) return false;
     if (password !== confirm) return false;
-    
+
     if (strength.level === "weak") return false;
     return true;
   }, [requestId, code, password, confirm, strength.level]);
@@ -121,12 +122,12 @@ const ResetPasswordPage: React.FC = () => {
     try {
       setLoading(true);
 
-      await api<ResetRes>("/auth/password/reset", {
+      await api<ResetRes>("/api/v1/auth/password/reset", {
         method: "POST",
         body: JSON.stringify({
-          requestId,
+          email: emailForReset,
           code: code.trim(),
-          newPassword: password,
+          new_password: password,
         }),
       });
 
@@ -148,8 +149,8 @@ const ResetPasswordPage: React.FC = () => {
     strength.level === "weak"
       ? "text-red-600"
       : strength.level === "medium"
-      ? "text-amber-600"
-      : "text-emerald-600";
+        ? "text-amber-600"
+        : "text-emerald-600";
 
   return (
     <div className="min-h-screen w-full relative overflow-hidden cosmic-gradient flex flex-col items-center justify-center p-6">
@@ -198,9 +199,8 @@ const ResetPasswordPage: React.FC = () => {
                 }}
                 inputMode="numeric"
                 placeholder="123456"
-                className={`w-full px-6 py-4 rounded-xl bg-slate-50 border outline-none focus:ring-2 ${
-                  codeErr ? "border-red-300 focus:ring-red-200" : "border-slate-200 focus:ring-blue-200"
-                }`}
+                className={`w-full px-6 py-4 rounded-xl bg-slate-50 border outline-none focus:ring-2 ${codeErr ? "border-red-300 focus:ring-red-200" : "border-slate-200 focus:ring-blue-200"
+                  }`}
               />
               {codeErr && <p className="mt-2 text-sm text-red-600">{codeErr}</p>}
               <p className="mt-2 text-xs text-slate-500">
@@ -223,9 +223,8 @@ const ResetPasswordPage: React.FC = () => {
                   if (cfErr && confirm) setCfErr(""); // พิมพ์ใหม่แล้วเคลียร์ mismatch รอเช็คตอน submit
                   if (formErr) setFormErr("");
                 }}
-                className={`w-full px-6 py-4 rounded-xl bg-slate-50 border outline-none focus:ring-2 ${
-                  pwErr ? "border-red-300 focus:ring-red-200" : "border-slate-200 focus:ring-blue-200"
-                }`}
+                className={`w-full px-6 py-4 rounded-xl bg-slate-50 border outline-none focus:ring-2 ${pwErr ? "border-red-300 focus:ring-red-200" : "border-slate-200 focus:ring-blue-200"
+                  }`}
               />
 
               {/* Strength */}
@@ -262,9 +261,8 @@ const ResetPasswordPage: React.FC = () => {
                   if (cfErr) setCfErr("");
                   if (formErr) setFormErr("");
                 }}
-                className={`w-full px-6 py-4 rounded-xl bg-slate-50 border outline-none focus:ring-2 ${
-                  cfErr ? "border-red-300 focus:ring-red-200" : "border-slate-200 focus:ring-blue-200"
-                }`}
+                className={`w-full px-6 py-4 rounded-xl bg-slate-50 border outline-none focus:ring-2 ${cfErr ? "border-red-300 focus:ring-red-200" : "border-slate-200 focus:ring-blue-200"
+                  }`}
               />
               {cfErr && <p className="mt-2 text-sm text-red-600">{cfErr}</p>}
             </div>
@@ -279,9 +277,8 @@ const ResetPasswordPage: React.FC = () => {
             <button
               type="submit"
               disabled={!canSubmit || loading}
-              className={`w-full py-4 btn-auth text-white rounded-2xl font-bold text-lg shadow-lg ${
-                !canSubmit || loading ? "opacity-60 cursor-not-allowed" : ""
-              }`}
+              className={`w-full py-4 btn-auth text-white rounded-2xl font-bold text-lg shadow-lg ${!canSubmit || loading ? "opacity-60 cursor-not-allowed" : ""
+                }`}
             >
               {loading ? "กำลังบันทึก..." : "ยืนยัน"}
             </button>

@@ -64,38 +64,91 @@ type ServiceOption = {
 type MonthlyServiceRow = { id: string; name: string; price: number };
 
 /* ====== Backend call (แก้ endpoint ให้ตรง) ====== */
+const API = import.meta.env.VITE_API_URL || "https://backendlinefacality.onrender.com";
+
+function getAuthToken(): string {
+    try {
+        const raw = localStorage.getItem("rentsphere_auth");
+        if (!raw) return "";
+        return JSON.parse(raw)?.state?.token || "";
+    } catch { return ""; }
+}
+
+function getCondoId(): string {
+    try {
+        const raw = localStorage.getItem("rentsphere_condo_wizard");
+        if (!raw) return "";
+        return JSON.parse(raw)?.state?.condoId || "";
+    } catch { return ""; }
+}
+
+function authHeaders() {
+    const token = getAuthToken();
+    return {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+}
+
 async function fetchRoomDetail(roomId: string): Promise<RoomDetail> {
-    // TODO: GET /api/owner/rooms/:roomId
-    const res = await fetch(`/api/owner/rooms/${encodeURIComponent(roomId)}`, {
+    const condoId = getCondoId();
+    if (!condoId) throw new Error("ไม่พบ condoId — กรุณาสร้างคอนโดก่อน");
+
+    const res = await fetch(`${API}/api/v1/condos/${condoId}/rooms`, {
         method: "GET",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
     });
 
     if (!res.ok) throw new Error("โหลดข้อมูลห้องไม่สำเร็จ");
     const data = await res.json();
+    const rooms: any[] = data.rooms || [];
+    const r = rooms.find((rm: any) => rm.id === roomId);
+    if (!r) throw new Error("ไม่พบห้องนี้ในระบบ");
 
-    // TODO: ปรับ mapping ตาม response จริง
+    // ดึงชื่อคอนโด
+    let condoName = "คอนโดมิเนียม";
+    try {
+        const cRes = await fetch(`${API}/api/v1/condos/mine`, { method: "GET", headers: authHeaders() });
+        if (cRes.ok) {
+            const cData = await cRes.json();
+            const c = cData.condo || (cData.condos && cData.condos[0]);
+            if (c) condoName = c.name_th || c.nameTh || c.name || condoName;
+        }
+    } catch { }
+
     return {
-        id: String(data.id ?? roomId),
-        roomNo: String(data.roomNo ?? data.number ?? "-"),
-        price: data.price ?? null,
-        status: String(data.status ?? "VACANT"),
-        isActive: Boolean(data.isActive ?? true),
-        condoName: data.condoName ?? data.condo?.name ?? null,
+        id: String(r.id),
+        roomNo: String(r.room_no || r.roomNo || "-"),
+        price: r.price != null ? Number(r.price) : null,
+        status: String(r.status || "VACANT"),
+        isActive: r.is_active ?? r.isActive ?? true,
+        condoName,
     };
 }
 
 /* ====== Services backend  ====== */
 async function fetchServiceOptions(_roomId: string): Promise<ServiceOption[]> {
-    // TODO: endpoint
-    // ex GET /api/owner/rooms/:roomId/services  หรือ  GET /api/owner/condos/:condoId/services
-    return [];
+    const condoId = getCondoId();
+    if (!condoId) return [];
+
+    try {
+        const res = await fetch(`${API}/api/v1/condos/${condoId}/services`, {
+            method: "GET",
+            headers: authHeaders(),
+        });
+        if (!res.ok) return [];
+        const data = await res.json();
+        const services: any[] = data.services || [];
+        return services.map((s: any) => ({
+            id: String(s.id),
+            name: s.name || s.service_name || "—",
+            price: Number(s.price || s.monthly_price || 0),
+        }));
+    } catch { return []; }
 }
 
 async function saveMonthlyServiceForRoom(_roomId: string, _serviceId: string) {
-    // TODO: POST /api/owner/rooms/:roomId/monthly-services
-    // body: { serviceId }
+    // ยังไม่มี endpoint เฉพาะ — saved locally for now
     return;
 }
 

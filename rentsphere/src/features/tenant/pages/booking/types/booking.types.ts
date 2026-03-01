@@ -1,20 +1,18 @@
-export type BookingStatus = 'BOOKED' | 'CHECKED_IN' | 'COMPLETED' | 'CANCELLED';
+// src/features/tenant/pages/booking/types/booking.types.ts
+
+export type BookingStatus = "BOOKED" | "ACTIVE" | "CANCELLED" | "FINISHED";
+
 
 export interface BookingRecord {
   id: string;
   facilityId: string;
-  facilityName: string;
+  facilityName?: string; // ✅ เพิ่มบรรทัดนี้
   imageUrl: string;
-  date: string; // ISO string
-  displayDate: string; // Thai format
+  date: string;
+  displayDate: string;
   slots: string[];
   userName: string;
   status: BookingStatus;
   createdAt: string;
-}
-
-export interface BookingRequest {
-  facilityId: string;
-  date: string;
-  slots: string[];
+  note?: string;
 }

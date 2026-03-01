@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Room } from "../types/addCondo.types";
+import { getRooms, setRoomServices } from "../condoApi";
 
 type ServiceOption = { id: number; label: string; price: number };
 
@@ -27,11 +28,30 @@ export default function Step8_RoomService() {
     // - setRooms(...)
     // ======================
     useEffect(() => {
-        // Example:
-        // const res = await api.getCondoSetupDraft(...)
-        // setFloorCount(res.floorCount)
-        // setRoomsPerFloor(res.roomsPerFloor)
-        // setRooms(res.rooms)
+        let cancelled = false;
+        async function load() {
+            try {
+                const data = await getRooms();
+                if (cancelled) return;
+                const apiRooms: Room[] = (data.rooms || []).map((r: any) => ({
+                    id: r.id,
+                    condoId: r.condo_id || r.condoId || "",
+                    floor: r.floor,
+                    roomNo: r.room_no || r.roomNo || "",
+                    price: r.price != null ? Number(r.price) : null,
+                    serviceId: r.service_id ?? r.serviceId ?? null,
+                    isActive: r.is_active ?? r.isActive ?? true,
+                    status: r.status || "VACANT",
+                }));
+                const maxFloor = apiRooms.reduce((m, r) => Math.max(m, r.floor), 0);
+                setFloorCount(maxFloor);
+                setRooms(apiRooms);
+            } catch (e) {
+                console.error("load rooms error:", e);
+            }
+        }
+        load();
+        return () => { cancelled = true; };
     }, []);
 
     // ======================
@@ -88,12 +108,15 @@ export default function Step8_RoomService() {
     // ======================
     // Local update + TODO API
     // ======================
-    const setServiceForRooms = (roomIds: string[], serviceId: number | null) => {
+    const setServiceForRooms = async (roomIds: string[], serviceId: number | null) => {
         const ids = new Set(roomIds);
         setRooms((prev) => prev.map((r) => (ids.has(r.id) ? { ...r, serviceId } : r)));
 
-        // TODO: API
-        // await api.setRoomServiceBulk({ roomIds, serviceId })
+        try {
+            await setRoomServices(roomIds.map((id) => ({ roomId: id, serviceId: serviceId ? String(serviceId) : null })));
+        } catch (e) {
+            console.error("set room services error:", e);
+        }
     };
 
     const onSaveService = () => {

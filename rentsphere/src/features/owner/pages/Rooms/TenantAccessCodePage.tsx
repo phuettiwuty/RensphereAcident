@@ -13,61 +13,114 @@ type AccessCodeResponse = {
     accessCode: string;
 };
 
-/* ===== Backend calls (แก้ endpoint ให้ตรง backend จริง) ===== */
-async function fetchRoomDetail(roomId: string): Promise<RoomDetail> {
-    const res = await fetch(`/api/owner/rooms/${encodeURIComponent(roomId)}`, {
-        method: "GET",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-    });
-    if (!res.ok) throw new Error("โหลดข้อมูลห้องไม่สำเร็จ");
-    const data = await res.json();
+/* ===== Backend calls (ใช้ real backend) ===== */
+const API = import.meta.env.VITE_API_URL || "https://backendlinefacality.onrender.com";
 
+function getAuthToken(): string {
+    try {
+        const raw = localStorage.getItem("rentsphere_auth");
+        if (!raw) return "";
+        return JSON.parse(raw)?.state?.token || "";
+    } catch { return ""; }
+}
+
+function getCondoId(): string {
+    try {
+        const raw = localStorage.getItem("rentsphere_condo_wizard");
+        if (!raw) return "";
+        return JSON.parse(raw)?.state?.condoId || "";
+    } catch { return ""; }
+}
+
+function authHeaders() {
+    const token = getAuthToken();
     return {
-        id: String(data.id ?? roomId),
-        roomNo: String(data.roomNo ?? data.number ?? "-"),
-        condoName: data.condoName ?? data.condo?.name ?? null,
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
     };
 }
 
-async function createOrGetAccessCode(roomId: string): Promise<AccessCodeResponse> {
-    const res = await fetch(`/api/owner/rooms/${encodeURIComponent(roomId)}/access-code`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-    });
-
-    if (!res.ok) throw new Error("สร้าง/โหลดรหัสเข้าพักไม่สำเร็จ");
-    const data = await res.json();
-    return { accessCode: String(data.accessCode ?? "") };
+function makeAccessCode(): string {
+    return String(Math.floor(100000 + Math.random() * 900000));
 }
 
-async function regenerateAccessCode(roomId: string): Promise<AccessCodeResponse> {
-    const res = await fetch(`/api/owner/rooms/${encodeURIComponent(roomId)}/access-code/regenerate`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+async function fetchRoomDetail(roomId: string): Promise<RoomDetail> {
+    const condoId = getCondoId();
+    if (!condoId) throw new Error("ไม่พบ condoId");
+
+    const res = await fetch(`${API}/api/v1/condos/${condoId}/rooms`, {
+        method: "GET",
+        headers: authHeaders(),
     });
 
-    if (!res.ok) throw new Error("สุ่มรหัสใหม่ไม่สำเร็จ");
+    if (!res.ok) throw new Error("โหลดข้อมูลห้องไม่สำเร็จ");
     const data = await res.json();
-    return { accessCode: String(data.accessCode ?? "") };
+    const rooms: any[] = data.rooms || [];
+    const r = rooms.find((rm: any) => rm.id === roomId);
+    if (!r) throw new Error("ไม่พบห้องนี้ในระบบ");
+
+    let condoName = "คอนโดมิเนียม";
+    try {
+        const cRes = await fetch(`${API}/api/v1/condos/mine`, { method: "GET", headers: authHeaders() });
+        if (cRes.ok) {
+            const cData = await cRes.json();
+            const c = cData.condo || (cData.condos && cData.condos[0]);
+            if (c) condoName = c.name_th || c.nameTh || c.name || condoName;
+        }
+    } catch { }
+
+    return {
+        id: String(r.id),
+        roomNo: String(r.room_no || r.roomNo || "-"),
+        condoName,
+    };
 }
 
 async function finalizeAccessCode(
     roomId: string,
     payload: { accessCode: string; tenantName?: string; roomNo?: string }
 ): Promise<void> {
-    const res = await fetch(`/api/owner/rooms/${encodeURIComponent(roomId)}/access-code/finalize`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+    // 1) บันทึก access code ลงห้อง
+    const condoId = getCondoId();
+    console.log("[finalizeAccessCode] condoId:", condoId, "roomId:", roomId, "accessCode:", payload.accessCode);
+
+    if (!condoId) {
+        throw new Error("ไม่พบ condoId (ลองกลับไปหน้า Dashboard แล้วเข้ามาใหม่)");
+    }
+
+    // บันทึก access code ลง room
+    const url = `${API}/api/v1/condos/${condoId}/rooms/access-code`;
+    console.log("[finalizeAccessCode] PUT", url);
+
+    const r = await fetch(url, {
+        method: "PUT",
+        headers: authHeaders(),
+        body: JSON.stringify({
+            roomId,
+            accessCode: payload.accessCode,
+            tenantName: payload.tenantName || null,
+        }),
     });
 
-    if (!res.ok) throw new Error("บันทึกข้อมูลรหัสเข้าพักไม่สำเร็จ");
+    const data = await r.json().catch(() => ({}));
+    console.log("[finalizeAccessCode] response:", r.status, data);
+
+    if (!r.ok) {
+        throw new Error(data?.error || `บันทึก access code ไม่สำเร็จ (${r.status})`);
+    }
+
+    // 2) อัพเดตสถานะห้องเป็น OCCUPIED
+    try {
+        await fetch(`${API}/api/v1/condos/${condoId}/rooms/status`, {
+            method: "PUT",
+            headers: authHeaders(),
+            body: JSON.stringify({
+                rooms: [{ roomId, status: "OCCUPIED" }],
+            }),
+        });
+    } catch (e) {
+        console.error("update room status error:", e);
+    }
 }
 
 /* ===== Icons ===== */
@@ -160,15 +213,11 @@ export default function TenantAccessCodePage() {
                 setLoading(true);
                 setError(null);
 
-                const [detail, codeRes] = await Promise.all([
-                    fetchRoomDetail(roomId),
-                    createOrGetAccessCode(roomId),
-                ]);
-
+                const detail = await fetchRoomDetail(roomId);
                 if (cancelled) return;
 
                 setRoom(detail);
-                setAccessCode(codeRes.accessCode || "");
+                setAccessCode(makeAccessCode());
                 setLoading(false);
             } catch (e: any) {
                 if (cancelled) return;
@@ -189,17 +238,10 @@ export default function TenantAccessCodePage() {
     const roomNo = useMemo(() => roomNoFromState ?? room?.roomNo ?? "-", [roomNoFromState, room]);
     const tenantName = useMemo(() => tenantNameFromState ?? "ผู้เช่า", [tenantNameFromState]);
 
-    const regenerate = async () => {
-        if (!roomId) return;
+    const regenerate = () => {
         setRegenerating(true);
-        try {
-            const res = await regenerateAccessCode(roomId);
-            setAccessCode(res.accessCode || "");
-        } catch (e: any) {
-            alert(e?.message ?? "สุ่มโค้ดใหม่ไม่สำเร็จ");
-        } finally {
-            setRegenerating(false);
-        }
+        setAccessCode(makeAccessCode());
+        setRegenerating(false);
     };
 
     const copyToClipboard = async () => {

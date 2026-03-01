@@ -1,6 +1,10 @@
 import React from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import type { DaySelection } from '../types/facility.types';
+interface DaySelection {
+  dayName: string;
+  date: number;
+  fullDate: string;
+}
 
 interface DateSelectorProps {
   days: DaySelection[];
@@ -21,9 +25,8 @@ const DateSelector: React.FC<DateSelectorProps> = ({ days, selectedDate, onSelec
             <button
               key={day.fullDate}
               onClick={() => onSelect(day.fullDate)}
-              className={`flex-1 flex flex-col items-center min-w-[50px] py-2 rounded-xl transition-all ${
-                isSelected ? 'bg-white shadow-md text-blue-600' : 'text-gray-400'
-              }`}
+              className={`flex-1 flex flex-col items-center min-w-[50px] py-2 rounded-xl transition-all ${isSelected ? 'bg-white shadow-md text-blue-600' : 'text-gray-400'
+                }`}
             >
               <span className="text-[10px] font-bold uppercase">{day.dayName}</span>
               <span className="text-lg font-bold">{day.date}</span>

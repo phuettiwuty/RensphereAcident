@@ -57,23 +57,62 @@ type RoomDetail = {
 };
 
 /* ===== Backend call (แก้ endpoint ให้ตรง) ===== */
+const API = import.meta.env.VITE_API_URL || "https://backendlinefacality.onrender.com";
+
+function getAuthToken(): string {
+    try {
+        const raw = localStorage.getItem("rentsphere_auth");
+        if (!raw) return "";
+        return JSON.parse(raw)?.state?.token || "";
+    } catch { return ""; }
+}
+
+function getCondoId(): string {
+    try {
+        const raw = localStorage.getItem("rentsphere_condo_wizard");
+        if (!raw) return "";
+        return JSON.parse(raw)?.state?.condoId || "";
+    } catch { return ""; }
+}
+
+function authHeaders() {
+    const token = getAuthToken();
+    return {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+}
+
 async function fetchRoomDetail(roomId: string): Promise<RoomDetail> {
-    // TODO: GET /api/owner/rooms/:roomId
-    const res = await fetch(`/api/owner/rooms/${encodeURIComponent(roomId)}`, {
+    const condoId = getCondoId();
+    if (!condoId) throw new Error("ไม่พบ condoId — กรุณาสร้างคอนโดก่อน");
+
+    const res = await fetch(`${API}/api/v1/condos/${condoId}/rooms`, {
         method: "GET",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
     });
 
     if (!res.ok) throw new Error("โหลดข้อมูลห้องไม่สำเร็จ");
     const data = await res.json();
+    const rooms: any[] = data.rooms || [];
+    const r = rooms.find((rm: any) => rm.id === roomId);
+    if (!r) throw new Error("ไม่พบห้องนี้ในระบบ");
 
-    // TODO: ปรับ mapping ตาม response จริง
+    let condoName = "คอนโดมิเนียม";
+    try {
+        const cRes = await fetch(`${API}/api/v1/condos/mine`, { method: "GET", headers: authHeaders() });
+        if (cRes.ok) {
+            const cData = await cRes.json();
+            const c = cData.condo || (cData.condos && cData.condos[0]);
+            if (c) condoName = c.name_th || c.nameTh || c.name || condoName;
+        }
+    } catch { }
+
     return {
-        id: String(data.id ?? roomId),
-        roomNo: String(data.roomNo ?? data.number ?? "-"),
-        price: data.price ?? 0,
-        condoName: data.condoName ?? data.condo?.name ?? null,
+        id: String(r.id),
+        roomNo: String(r.room_no || r.roomNo || "-"),
+        price: r.price != null ? Number(r.price) : null,
+        condoName,
     };
 }
 
@@ -123,7 +162,7 @@ export default function MonthlyContractPage() {
     const roomNo = room?.roomNo ?? "-";
     const rent = room?.price ?? 0;
 
-    // ===== form state (โครง UI เฉย ๆ) =====
+    // ===== form state =====
     const [checkIn, setCheckIn] = useState("");
     const [checkOut, setCheckOut] = useState("");
     const [monthlyRent, setMonthlyRent] = useState<number>(0);
@@ -143,6 +182,7 @@ export default function MonthlyContractPage() {
     const [emgPhone, setEmgPhone] = useState("");
 
     const [note, setNote] = useState("");
+    const [saving, setSaving] = useState(false);
 
     // ตั้งค่าเริ่มต้นค่าเช่าตามห้อง หลังโหลด room มาแล้ว
     useEffect(() => {
@@ -153,9 +193,51 @@ export default function MonthlyContractPage() {
         return (deposit || 0) - (bookingFee || 0);
     }, [deposit, bookingFee]);
 
-    const goNext = () => {
+    const goNext = async () => {
         if (!roomId) return;
-        nav(`/owner/rooms/${roomId}/advance-payment`);
+        if (!firstName.trim()) return alert("กรุณากรอกชื่อจริง");
+        if (!checkIn) return alert("กรุณาเลือกวันที่เข้าพัก");
+
+        const tenantName = `${firstName.trim()} ${lastName.trim()}`.trim();
+
+        // บันทึกสัญญาลง room_contracts
+        const condoId = getCondoId();
+        if (condoId) {
+            setSaving(true);
+            try {
+                await fetch(`${API}/api/v1/condos/${condoId}/contracts`, {
+                    method: "POST",
+                    headers: authHeaders(),
+                    body: JSON.stringify({
+                        roomId,
+                        tenantFirstName: firstName.trim(),
+                        tenantLastName: lastName.trim(),
+                        tenantPhone: phone.trim(),
+                        tenantCitizenId: citizenId.trim(),
+                        tenantAddress: address.trim(),
+                        checkIn,
+                        checkOut: checkOut || null,
+                        monthlyRent,
+                        deposit,
+                        depositPayBy,
+                        bookingFee,
+                        bookingNo: bookingNo.trim() || null,
+                        emergencyName: emgName.trim() || null,
+                        emergencyRelation: emgRelation.trim() || null,
+                        emergencyPhone: emgPhone.trim() || null,
+                        note: note.trim() || null,
+                    }),
+                });
+            } catch (e) {
+                console.error("save contract error:", e);
+            }
+            setSaving(false);
+        }
+
+        // ไปหน้า gen access code พร้อมข้อมูลผู้เช่า
+        nav(`/owner/rooms/${roomId}/access-code`, {
+            state: { tenantName, roomNo },
+        });
     };
 
     if (loading) {

@@ -1,25 +1,24 @@
+// src/features/tenant/pages/booking/types/facility.types.ts
+
+export type FacilityStatus = "available" | "full";
+
 export interface Facility {
   id: string;
   name: string;
   category: string;
   building: string;
-  openTime: string;
-  closeTime: string;
+  openTime: string;  // "06:00"
+  closeTime: string; // "22:00"
   imageUrl: string;
-  availableSlotsCount?: number;
-  status: 'available' | 'full';
-  isQuotaExempt?: boolean;
-  capacity?: number; // Maximum people per slot
+  status: FacilityStatus;
+  isQuotaExempt: boolean;
+  capacity: number;
 }
+
+export type TimeSlotStatus = "available" | "full";
 
 export interface TimeSlot {
-  time: string;
-  status: 'available' | 'full';
-  currentOccupancy?: number;
-}
-
-export interface DaySelection {
-  dayName: string;
-  date: number;
-  fullDate: string;
+  time: string; // "06:00 - 07:00"
+  status: TimeSlotStatus;
+  currentOccupancy: number;
 }

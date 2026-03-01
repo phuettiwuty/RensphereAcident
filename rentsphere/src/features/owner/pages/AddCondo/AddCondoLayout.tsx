@@ -100,35 +100,28 @@ export default function AddCondoLayout() {
     const isStep0 = !!matchPath({ path: "/owner/add-condo/step-0" }, pathname);
     const isStep9 = !!matchPath({ path: "/owner/add-condo/step-9" }, pathname);
 
-    /* ===== load owner name  ===== */
+    /* ===== load owner name from auth store ===== */
     const [me, setMe] = useState<MeResponse | null>(null);
     const [meLoading, setMeLoading] = useState(false);
 
     useEffect(() => {
-        let cancelled = false;
-
-        const run = async () => {
-            if (isStep0 || isStep9) return;
-
-            if (me) return;
-
-            setMeLoading(true);
-            try {
-                const data = await fetchMe();
-                if (cancelled) return;
-                setMe(data);
-            } catch {
-                if (cancelled) return;
-                setMe(null);
-            } finally {
-                if (!cancelled) setMeLoading(false);
+        if (isStep0 || isStep9) return;
+        if (me) return;
+        setMeLoading(true);
+        try {
+            const raw = localStorage.getItem("rentsphere_auth");
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                const user = parsed?.state?.user;
+                if (user) {
+                    setMe({
+                        id: user.id || "",
+                        displayName: user.name || user.email || "Owner",
+                    });
+                }
             }
-        };
-
-        run();
-        return () => {
-            cancelled = true;
-        };
+        } catch { }
+        setMeLoading(false);
     }, [pathname, isStep0, isStep9]);
 
     if (isStep0) {

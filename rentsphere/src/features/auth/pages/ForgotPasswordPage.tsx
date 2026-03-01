@@ -9,7 +9,7 @@ type ForgotRes = { ok: true; requestId?: string; channel?: "EMAIL" | "PHONE" };
 const ForgotPasswordPage: React.FC = () => {
   const navigate = useNavigate();
 
-  
+
   const base = "/auth/owner";
 
   const [forgotMethod, setForgotMethod] = useState<"email" | "phone">("email");
@@ -47,18 +47,14 @@ const ForgotPasswordPage: React.FC = () => {
     try {
       setLoading(true);
 
-      const channel: "EMAIL" | "PHONE" = forgotMethod === "email" ? "EMAIL" : "PHONE";
-
-      const data = await api<ForgotRes>("/auth/password/forgot", {
+      const data = await api<ForgotRes>("/api/v1/auth/password/forgot", {
         method: "POST",
-        body: JSON.stringify({ identifier: v, channel }),
+        body: JSON.stringify({ email: v }),
       });
 
-      if (data?.requestId) {
+      if (data?.ok) {
         navigate(
-          `${base}/reset?requestId=${encodeURIComponent(data.requestId)}&channel=${encodeURIComponent(
-            data.channel || channel
-          )}`,
+          `${base}/reset?email=${encodeURIComponent(v)}&channel=EMAIL`,
           { replace: true }
         );
         return;
@@ -93,9 +89,8 @@ const ForgotPasswordPage: React.FC = () => {
                 setError("");
                 setInfo("");
               }}
-              className={`flex-1 py-3 rounded-xl border transition-all font-medium ${
-                forgotMethod === "email" ? "border-blue-400 text-blue-600" : "border-gray-200 text-gray-400"
-              }`}
+              className={`flex-1 py-3 rounded-xl border transition-all font-medium ${forgotMethod === "email" ? "border-blue-400 text-blue-600" : "border-gray-200 text-gray-400"
+                }`}
             >
               อีเมล
             </button>
@@ -108,9 +103,8 @@ const ForgotPasswordPage: React.FC = () => {
                 setError("");
                 setInfo("");
               }}
-              className={`flex-1 py-3 rounded-xl border transition-all font-medium ${
-                forgotMethod === "phone" ? "border-blue-400 text-blue-600" : "border-gray-200 text-gray-400"
-              }`}
+              className={`flex-1 py-3 rounded-xl border transition-all font-medium ${forgotMethod === "phone" ? "border-blue-400 text-blue-600" : "border-gray-200 text-gray-400"
+                }`}
             >
               เบอร์โทรศัพท์
             </button>
@@ -130,9 +124,8 @@ const ForgotPasswordPage: React.FC = () => {
                   if (error) setError("");
                   if (info) setInfo("");
                 }}
-                className={`w-full px-5 py-3 rounded-lg bg-slate-50 border outline-none focus:ring-2 ${
-                  error ? "border-red-300 focus:ring-red-200" : "border-slate-200 focus:ring-blue-200"
-                }`}
+                className={`w-full px-5 py-3 rounded-lg bg-slate-50 border outline-none focus:ring-2 ${error ? "border-red-300 focus:ring-red-200" : "border-slate-200 focus:ring-blue-200"
+                  }`}
                 placeholder={forgotMethod === "email" ? "example@mail.com" : "08X-XXX-XXXX"}
               />
 
@@ -143,9 +136,8 @@ const ForgotPasswordPage: React.FC = () => {
             <button
               type="submit"
               disabled={loading}
-              className={`w-full max-w-md py-4 btn-auth text-white rounded-2xl font-bold text-lg shadow-lg ${
-                loading ? "opacity-60 cursor-not-allowed" : ""
-              }`}
+              className={`w-full max-w-md py-4 btn-auth text-white rounded-2xl font-bold text-lg shadow-lg ${loading ? "opacity-60 cursor-not-allowed" : ""
+                }`}
             >
               {loading ? "กำลังส่ง..." : forgotMethod === "email" ? "ส่งรหัสทางอีเมล" : "ส่ง OTP ทาง SMS"}
             </button>

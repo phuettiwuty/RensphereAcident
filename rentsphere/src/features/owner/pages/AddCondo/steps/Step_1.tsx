@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { addService } from "../condoApi";
 
 type ServiceDraft = {
   id: string;
@@ -41,7 +42,7 @@ const Step_1: React.FC = () => {
             ? "ELECTRIC"
             : "NONE";
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     const cleanName = serviceName.trim();
     if (!cleanName) return;
 
@@ -49,6 +50,17 @@ const Step_1: React.FC = () => {
       (s) => s.name.trim().toLowerCase() === cleanName.toLowerCase()
     );
     if (dup) return;
+
+    try {
+      await addService({
+        name: cleanName,
+        price: priceNumber,
+        isVariable,
+        variableType,
+      });
+    } catch (e: any) {
+      console.error("save service error:", e);
+    }
 
     setServices((prev) => [
       ...prev,

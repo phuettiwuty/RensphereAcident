@@ -7,10 +7,20 @@ import { CondoBackground, Meteors } from "@/features/auth/components/AuthBackgro
 import { api } from "@/shared/api/http";
 import { useOwnerRegisterStore } from "@/features/auth/ownerRegister.store";
 
-type StartRegisterResponse = {
-  requestId: string;
-  channel: "EMAIL" | "PHONE";
-  message: string;
+type RegisterResponse = {
+  ok: boolean;
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    phone: string | null;
+    role: string;
+    is_verified: boolean;
+  };
+  verify: {
+    sent: boolean;
+    channel: "EMAIL" | "PHONE";
+  };
 };
 
 type FieldErrors = Partial<Record<"name" | "email" | "phone" | "password" | "confirm", string>>;
@@ -28,7 +38,7 @@ function isValidEmail(email: string) {
 }
 
 function getPasswordScore(pw: string) {
-  
+
   const lenOK = pw.length >= 8;
   const hasLower = /[a-z]/.test(pw);
   const hasUpper = /[A-Z]/.test(pw);
@@ -62,20 +72,20 @@ const OwnerRegisterPage: React.FC = () => {
   const navigate = useNavigate();
   const setStart = useOwnerRegisterStore((s) => s.setStart);
 
-  const [name,setName] = useState("");
-  const [email,setEmail] = useState("");
-  const [phone,setPhone] = useState("");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
 
-  const [password,setPassword] = useState("");
-  const [confirm,setConfirm] = useState("");
-  const [verifyChannel,setVerifyChannel] = useState<"EMAIL" | "PHONE">("EMAIL");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [verifyChannel, setVerifyChannel] = useState<"EMAIL" | "PHONE">("EMAIL");
 
   const [loading, setLoading] = useState(false);
 
- 
+
   const [errors, setErrors] = useState<FieldErrors>({});
 
-  
+
   const nameRef = useRef<HTMLInputElement | null>(null);
   const emailRef = useRef<HTMLInputElement | null>(null);
   const phoneRef = useRef<HTMLInputElement | null>(null);
@@ -127,13 +137,13 @@ const OwnerRegisterPage: React.FC = () => {
       nextErrors,
       payload: ok
         ? {
-            name: n,
-            email: e,
-            phone: p,
-            password,
-            role: "OWNER",
-            verifyChannel,
-          }
+          name: n,
+          email: e,
+          phone: p,
+          password,
+          role: "OWNER",
+          verifyChannel,
+        }
         : undefined,
     };
   }
@@ -155,28 +165,23 @@ const OwnerRegisterPage: React.FC = () => {
     try {
       setLoading(true);
 
-      const data = await api<StartRegisterResponse>("/auth/register", {
+      const data = await api<RegisterResponse>("/api/v1/auth/register", {
         method: "POST",
         body: JSON.stringify(payload),
       });
 
       setStart({
-        requestId: data.requestId,
+        requestId: data.user.id,
         email: payload.email,
         phone: payload.phone,
-        channel: data.channel,
+        channel: data.verify.channel || "EMAIL",
       });
 
       toast.success("สมัครสำเร็จ! กรุณายืนยันตัวตน");
 
-      navigate(
-        `/auth/owner/verify-method?requestId=${encodeURIComponent(data.requestId)}&channel=${encodeURIComponent(
-          data.channel
-        )}`,
-        { replace: true }
-      );
+      navigate("/auth/owner/verify-email", { replace: true });
     } catch (err: any) {
-    
+
       const msg = err?.message || "สมัครสมาชิกไม่สำเร็จ";
       toast.error(msg);
     } finally {
@@ -248,17 +253,16 @@ const OwnerRegisterPage: React.FC = () => {
               {errors.phone && <p className="mt-1 text-xs text-red-200">{errors.phone}</p>}
             </div>
 
-           
+
             <div className="flex gap-2 pt-1">
               <button
                 type="button"
                 disabled={loading}
                 onClick={() => setVerifyChannel("EMAIL")}
-                className={`flex-1 py-3 rounded-2xl border text-sm font-semibold transition-all ${
-                  verifyChannel === "EMAIL"
-                    ? "bg-white text-slate-900 border-white"
-                    : "bg-white/10 text-white/80 border-white/20 hover:bg-white/15"
-                } ${loading ? "opacity-60 cursor-not-allowed" : ""}`}
+                className={`flex-1 py-3 rounded-2xl border text-sm font-semibold transition-all ${verifyChannel === "EMAIL"
+                  ? "bg-white text-slate-900 border-white"
+                  : "bg-white/10 text-white/80 border-white/20 hover:bg-white/15"
+                  } ${loading ? "opacity-60 cursor-not-allowed" : ""}`}
               >
                 ยืนยันด้วยอีเมล
               </button>
@@ -267,11 +271,10 @@ const OwnerRegisterPage: React.FC = () => {
                 type="button"
                 disabled={loading}
                 onClick={() => setVerifyChannel("PHONE")}
-                className={`flex-1 py-3 rounded-2xl border text-sm font-semibold transition-all ${
-                  verifyChannel === "PHONE"
-                    ? "bg-white text-slate-900 border-white"
-                    : "bg-white/10 text-white/80 border-white/20 hover:bg-white/15"
-                } ${loading ? "opacity-60 cursor-not-allowed" : ""}`}
+                className={`flex-1 py-3 rounded-2xl border text-sm font-semibold transition-all ${verifyChannel === "PHONE"
+                  ? "bg-white text-slate-900 border-white"
+                  : "bg-white/10 text-white/80 border-white/20 hover:bg-white/15"
+                  } ${loading ? "opacity-60 cursor-not-allowed" : ""}`}
               >
                 ยืนยันด้วยเบอร์
               </button>
@@ -343,9 +346,8 @@ const OwnerRegisterPage: React.FC = () => {
                 type="button"
                 disabled={loading}
                 onClick={() => navigate("/auth/owner/login")}
-                className={`text-sky-300 hover:text-sky-200 underline underline-offset-4 ${
-                  loading ? "opacity-60 cursor-not-allowed" : ""
-                }`}
+                className={`text-sky-300 hover:text-sky-200 underline underline-offset-4 ${loading ? "opacity-60 cursor-not-allowed" : ""
+                  }`}
               >
                 เข้าสู่ระบบ
               </button>

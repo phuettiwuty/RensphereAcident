@@ -21,14 +21,13 @@ const BookingRuleBox: React.FC<BookingRuleBoxProps> = ({ checked, onToggle }) =>
           </div>
         ))}
       </div>
-      
-      <button 
+
+      <button
         onClick={onToggle}
         className="flex items-center gap-3 active:opacity-70 transition-opacity"
       >
-        <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${
-          checked ? 'bg-purple-500 border-purple-500 text-white' : 'border-purple-200 bg-white'
-        }`}>
+        <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${checked ? 'bg-purple-500 border-purple-500 text-white' : 'border-purple-200 bg-white'
+          }`}>
           {checked && <Check size={16} strokeWidth={3} />}
         </div>
         <span className="text-xs font-bold text-gray-500">{BOOKING_TEXT.RULES_AGREE}</span>

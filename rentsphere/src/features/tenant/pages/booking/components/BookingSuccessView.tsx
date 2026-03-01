@@ -22,7 +22,7 @@ const BookingSuccessView: React.FC<BookingSuccessViewProps> = ({ onFinish }) => 
       <h2 className="text-3xl font-black text-gray-800 mb-2">{BOOKING_TEXT.SUCCESS_TITLE}</h2>
       <p className="text-gray-500 font-bold mb-12">{BOOKING_TEXT.SUCCESS_DESC}</p>
 
-      <button 
+      <button
         onClick={onFinish}
         className="w-full py-4 bg-gradient-to-r from-blue-400 to-indigo-400 text-white font-black text-xl rounded-2xl shadow-xl shadow-blue-200 active:scale-95 transition-all"
       >

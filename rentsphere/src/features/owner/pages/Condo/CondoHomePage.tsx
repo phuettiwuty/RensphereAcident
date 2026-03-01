@@ -344,12 +344,28 @@ function UserManagementPanel({ condoName }: { condoName: string }) {
    ========================= */
 type LocationState = { justCreated?: boolean; condoId?: string } | null;
 
+const API = import.meta.env.VITE_API_URL || "https://backendlinefacality.onrender.com";
+
+function getAuthToken(): string {
+    try {
+        const raw = localStorage.getItem("rentsphere_auth");
+        if (!raw) return "";
+        const parsed = JSON.parse(raw);
+        return parsed?.state?.token || "";
+    } catch {
+        return "";
+    }
+}
+
 // แก้ URLให้ตรงbackend
 async function fetchCondosFromApi(): Promise<CondoItem[]> {
-    const res = await fetch("/api/owner/condos", {
+    const token = getAuthToken();
+    const res = await fetch(`${API}/api/v1/condos/mine`, {
         method: "GET",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
     });
 
     if (!res.ok) {
@@ -358,10 +374,46 @@ async function fetchCondosFromApi(): Promise<CondoItem[]> {
 
     const data = await res.json();
 
-    // รองรับ 2 แบบ API ส่งเป็น array ตรง ๆ หรือห่อ {items:[]}
-    if (Array.isArray(data)) return data as CondoItem[];
-    if (Array.isArray(data?.items)) return data.items as CondoItem[];
-    return [];
+    // backend อาจส่ง { ok, condo } (single) หรือ { ok, condos } (array)
+    const condoList: any[] = [];
+    if (data.condo) condoList.push(data.condo);
+    if (Array.isArray(data.condos)) condoList.push(...data.condos);
+    if (Array.isArray(data)) condoList.push(...data);
+    if (Array.isArray(data?.items)) condoList.push(...data.items);
+
+    // แปลงเป็น CondoItem
+    const items: CondoItem[] = [];
+    for (const c of condoList) {
+        let roomsTotal = 0;
+        let roomsActive = 0;
+
+        // ลองดึงจำนวนห้องจาก API
+        try {
+            const rRes = await fetch(`${API}/api/v1/condos/${c.id}/rooms`, {
+                method: "GET",
+                headers: {
+                    "Content-Type": "application/json",
+                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                },
+            });
+            if (rRes.ok) {
+                const rData = await rRes.json();
+                const rooms = rData.rooms || [];
+                roomsTotal = rooms.length;
+                roomsActive = rooms.filter((r: any) => r.is_active !== false && r.isActive !== false).length;
+            }
+        } catch { }
+
+        items.push({
+            id: c.id,
+            name: c.name_th || c.nameTh || c.name || "—",
+            roomsTotal,
+            roomsActive,
+            unpaidBills: c.unpaid_bills ?? c.unpaidBills ?? 0,
+        });
+    }
+
+    return items;
 }
 
 export default function CondoHomePage() {

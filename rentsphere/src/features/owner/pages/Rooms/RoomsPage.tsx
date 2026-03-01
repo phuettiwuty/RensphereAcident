@@ -55,36 +55,70 @@ type RoomRow = {
 };
 
 /* ================= backend calls (แก้ URL ให้ตรง) ================= */
+const API = import.meta.env.VITE_API_URL || "https://backendlinefacality.onrender.com";
+
+function getAuthToken(): string {
+    try {
+        const raw = localStorage.getItem("rentsphere_auth");
+        if (!raw) return "";
+        const parsed = JSON.parse(raw);
+        return parsed?.state?.token || "";
+    } catch {
+        return "";
+    }
+}
+
+function authHeaders() {
+    const token = getAuthToken();
+    return {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+}
+
 async function fetchMyCondos(): Promise<CondoLite[]> {
-    //ex: GET /api/owner/condos
-    const res = await fetch("/api/owner/condos", {
+    const res = await fetch(`${API}/api/v1/condos/mine`, {
         method: "GET",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
     });
     if (!res.ok) return [];
     const data = await res.json();
 
-    if (Array.isArray(data)) return data.map((x: any) => ({ id: String(x.id), name: String(x.name) }));
-    if (Array.isArray(data?.items)) return data.items.map((x: any) => ({ id: String(x.id), name: String(x.name) }));
-    return [];
+    const list: any[] = [];
+    if (data.condo) list.push(data.condo);
+    if (Array.isArray(data.condos)) list.push(...data.condos);
+    if (Array.isArray(data)) list.push(...data);
+
+    return list.map((x: any) => ({
+        id: String(x.id),
+        name: String(x.name_th || x.nameTh || x.name || "—"),
+    }));
 }
 
 async function fetchRooms(condoId: string): Promise<RoomRow[]> {
-    //แก้ endpointให้ตรง backend
-    //ex: GET /api/owner/condos/:id/rooms
-    const res = await fetch(`/api/owner/condos/${encodeURIComponent(condoId)}/rooms`, {
+    const res = await fetch(`${API}/api/v1/condos/${condoId}/rooms`, {
         method: "GET",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
     });
 
     if (!res.ok) throw new Error("โหลดรายการห้องไม่สำเร็จ");
     const data = await res.json();
 
-    if (Array.isArray(data)) return data as RoomRow[];
-    if (Array.isArray(data?.items)) return data.items as RoomRow[];
-    return [];
+    const rawRooms: any[] = data.rooms || (Array.isArray(data) ? data : []);
+
+    return rawRooms.map((r: any) => ({
+        id: String(r.id),
+        condoId: String(r.condo_id || r.condoId || condoId),
+        roomNo: String(r.room_no || r.roomNo || "—"),
+        floor: r.floor ?? undefined,
+        isActive: r.is_active ?? r.isActive ?? true,
+        status: r.status || "VACANT",
+        price: r.price != null ? Number(r.price) : null,
+        tenantName: r.tenant_name ?? r.tenantName ?? null,
+        moveOutAt: r.move_out_at ?? r.moveOutAt ?? null,
+        advanceBooking: r.advance_booking ?? r.advanceBooking ?? null,
+        unpaidBills: r.unpaid_bills ?? r.unpaidBills ?? null,
+    }));
 }
 
 /* ================= Page ================= */

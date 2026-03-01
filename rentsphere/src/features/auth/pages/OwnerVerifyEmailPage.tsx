@@ -26,7 +26,7 @@ const OwnerVerifyEmailPage: React.FC = () => {
     }
   }, [storeRequestId, requestIdFromUrl, setRequestId]);
 
- 
+
   const [code, setCode] = useState(["", "", "", "", "", ""]);
   const [loading, setLoading] = useState(false);
 
@@ -57,7 +57,7 @@ const OwnerVerifyEmailPage: React.FC = () => {
     }
   };
 
- 
+
   async function handleSubmit() {
     if (!requestId) {
       toast.error("Session หมดอายุ กรุณาสมัครใหม่");
@@ -69,10 +69,10 @@ const OwnerVerifyEmailPage: React.FC = () => {
     try {
       setLoading(true);
 
-      await api<VerifyEmailRes>("/auth/verify/email", {
+      await api<VerifyEmailRes>("/api/v1/auth/verify/email", {
         method: "POST",
         body: JSON.stringify({
-          requestId,
+          email,
           code: code.join(""),
         }),
       });
@@ -89,7 +89,7 @@ const OwnerVerifyEmailPage: React.FC = () => {
     }
   }
 
- 
+
   async function handleResend() {
     if (!requestId) {
       toast.error("Session หมดอายุ กรุณาสมัครใหม่");
@@ -99,9 +99,9 @@ const OwnerVerifyEmailPage: React.FC = () => {
     try {
       setLoading(true);
 
-      await api<{ ok: true }>("/auth/verify/resend", {
+      await api<{ ok: true }>("/api/v1/auth/verify/resend", {
         method: "POST",
-        body: JSON.stringify({ requestId }),
+        body: JSON.stringify({ email }),
       });
 
       toast.success("ส่งรหัสใหม่เรียบร้อย 📩");
@@ -167,11 +167,10 @@ const OwnerVerifyEmailPage: React.FC = () => {
             type="button"
             disabled={!isComplete || loading}
             onClick={handleSubmit}
-            className={`w-full max-w-md py-4 btn-auth text-white rounded-2xl font-bold text-lg shadow-lg ${
-              !isComplete || loading
+            className={`w-full max-w-md py-4 btn-auth text-white rounded-2xl font-bold text-lg shadow-lg ${!isComplete || loading
                 ? "opacity-50 cursor-not-allowed"
                 : ""
-            }`}
+              }`}
           >
             {loading ? "กำลังตรวจสอบ..." : "ยืนยันรหัสอีเมล"}
           </button>

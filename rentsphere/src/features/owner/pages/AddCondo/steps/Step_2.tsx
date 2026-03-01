@@ -3,6 +3,7 @@ import WaterIconImg from "@/assets/Water.png";
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import UtilitySetupCard from "../components/UtilitySetupCard";
+import { saveUtilities } from "../condoApi";
 
 type UtilityType = "water" | "electricity";
 type BillingType = "METER" | "METER_MIN" | "FLAT";
@@ -255,7 +256,17 @@ const Step_2: React.FC = () => {
 
         <button
           type="button"
-          onClick={() => nav("../step-3")}
+          onClick={async () => {
+            try {
+              await saveUtilities({
+                water: utilityConfig.water || undefined,
+                electricity: utilityConfig.electricity || undefined,
+              });
+            } catch (e) {
+              console.error("save utilities error:", e);
+            }
+            nav("../step-3");
+          }}
           className="h-[46px] w-24 rounded-xl border-0 text-white font-black text-sm shadow-[0_12px_22px_rgba(0,0,0,0.18)] transition
                          !bg-[#93C5FD] hover:!bg-[#7fb4fb] active:scale-[0.98] cursor-pointer
                          focus:outline-none focus:ring-2 focus:ring-blue-300"

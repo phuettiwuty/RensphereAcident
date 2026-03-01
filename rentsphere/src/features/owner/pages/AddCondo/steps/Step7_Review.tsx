@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import type { Room, RoomStatus } from "../types/addCondo.types";
+import { getRooms, setRoomStatuses } from "../condoApi";
 
 type NavState = {
     selectedRoomIds?: string[];
@@ -36,11 +37,33 @@ export default function Step7_Review() {
     // - setSelectedRoomIds(...) (optional)
     // ======================
     useEffect(() => {
-        // Example:
-        // const res = await api.getCondoSetupDraft(...)
-        // setFloorCount(res.floorCount)
-        // setRooms(res.rooms)
-        // setSelectedRoomIds(res.selectedRoomIds ?? selectedRoomIds)
+        let cancelled = false;
+        async function load() {
+            try {
+                const data = await getRooms();
+                if (cancelled) return;
+                const apiRooms: Room[] = (data.rooms || []).map((r: any) => ({
+                    id: r.id,
+                    condoId: r.condo_id || r.condoId || "",
+                    floor: r.floor,
+                    roomNo: r.room_no || r.roomNo || "",
+                    price: r.price != null ? Number(r.price) : null,
+                    serviceId: r.service_id ?? r.serviceId ?? null,
+                    isActive: r.is_active ?? r.isActive ?? true,
+                    status: r.status || "VACANT",
+                }));
+                const maxFloor = apiRooms.reduce((m, r) => Math.max(m, r.floor), 0);
+                setFloorCount(maxFloor);
+                setRooms(apiRooms);
+                if (selectedRoomIds.length === 0) {
+                    setSelectedRoomIds(apiRooms.map((r) => r.id));
+                }
+            } catch (e) {
+                console.error("load rooms error:", e);
+            }
+        }
+        load();
+        return () => { cancelled = true; };
     }, []);
 
     useEffect(() => {
@@ -82,23 +105,31 @@ export default function Step7_Review() {
         setPickedIds((prev) => prev.filter((id) => !ids.has(id)));
     };
 
-    const setStatusForRooms = (roomIds: string[], status: RoomStatus) => {
+    const setStatusForRooms = async (roomIds: string[], status: RoomStatus) => {
         const ids = new Set(roomIds);
         setRooms((prev) => prev.map((r) => (ids.has(r.id) ? { ...r, status } : r)));
 
-        // TODO: API
-        // await api.setRoomStatusBulk({ roomIds, status })
+        try {
+            await setRoomStatuses(roomIds.map((id) => ({ roomId: id, status })));
+        } catch (e) {
+            console.error("set room statuses error:", e);
+        }
     };
 
-    const toggleRoomStatus = (roomId: string) => {
+    const toggleRoomStatus = async (roomId: string) => {
+        const room = rooms.find((r) => r.id === roomId);
+        const newStatus = room?.status === "VACANT" ? "OCCUPIED" : "VACANT";
         setRooms((prev) =>
             prev.map((r) =>
-                r.id === roomId ? { ...r, status: r.status === "VACANT" ? "OCCUPIED" : "VACANT" } : r
+                r.id === roomId ? { ...r, status: newStatus as RoomStatus } : r
             )
         );
 
-        // TODO: API
-        // await api.toggleRoomStatus({ roomId })
+        try {
+            await setRoomStatuses([{ roomId, status: newStatus }]);
+        } catch (e) {
+            console.error("toggle room status error:", e);
+        }
     };
 
     const applyVacant = () => {
