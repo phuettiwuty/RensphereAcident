@@ -374,12 +374,23 @@ async function fetchCondosFromApi(): Promise<CondoItem[]> {
 
     const data = await res.json();
 
-    // backend อาจส่ง { ok, condo } (single) หรือ { ok, condos } (array)
-    const condoList: any[] = [];
-    if (data.condo) condoList.push(data.condo);
-    if (Array.isArray(data.condos)) condoList.push(...data.condos);
-    if (Array.isArray(data)) condoList.push(...data);
-    if (Array.isArray(data?.items)) condoList.push(...data.items);
+    // backend ส่ง { ok, condo, condos } — ใช้ condos (array) เป็นหลัก
+    let condoList: any[] = [];
+    if (Array.isArray(data.condos) && data.condos.length > 0) {
+        condoList = data.condos;
+    } else if (data.condo) {
+        condoList = [data.condo];
+    } else if (Array.isArray(data)) {
+        condoList = data;
+    }
+
+    // deduplicate by id
+    const seen = new Set<string>();
+    condoList = condoList.filter((c: any) => {
+        if (seen.has(c.id)) return false;
+        seen.add(c.id);
+        return true;
+    });
 
     // แปลงเป็น CondoItem
     const items: CondoItem[] = [];
@@ -387,7 +398,6 @@ async function fetchCondosFromApi(): Promise<CondoItem[]> {
         let roomsTotal = 0;
         let roomsActive = 0;
 
-        // ลองดึงจำนวนห้องจาก API
         try {
             const rRes = await fetch(`${API}/api/v1/condos/${c.id}/rooms`, {
                 method: "GET",
@@ -414,6 +424,21 @@ async function fetchCondosFromApi(): Promise<CondoItem[]> {
     }
 
     return items;
+}
+
+async function deleteCondo(condoId: string): Promise<void> {
+    const token = getAuthToken();
+    const res = await fetch(`${API}/api/v1/condos/${condoId}`, {
+        method: "DELETE",
+        headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+    });
+    if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error || "ลบคอนโดไม่สำเร็จ");
+    }
 }
 
 export default function CondoHomePage() {
@@ -463,6 +488,17 @@ export default function CondoHomePage() {
 
     // ไปหน้า dashboard แบบผูก condoId
     const goDashboard = (condoId: string) => nav("/owner/dashboard", { state: { condoId } });
+
+    const handleDelete = async (c: CondoItem) => {
+        const ok = window.confirm(`ต้องการลบคอนโด "${c.name}" จริงหรือไม่?\n(ข้อมูลห้อง/ผู้เช่าที่ผูกอยู่จะถูกลบด้วย)`);
+        if (!ok) return;
+        try {
+            await deleteCondo(c.id);
+            setCondos((prev) => prev.filter((x) => x.id !== c.id));
+        } catch (e: any) {
+            alert(e?.message || "ลบไม่สำเร็จ");
+        }
+    };
 
     const condoNameForUsers = sortedCondos[0]?.name ?? "—";
 
@@ -628,7 +664,7 @@ export default function CondoHomePage() {
                                                                             <div className="text-[11px] font-bold opacity-80">บิลค้างชำระ</div>
                                                                         </div>
 
-                                                                        <div className="flex items-center justify-center">
+                                                                        <div className="flex items-center justify-center gap-2">
                                                                             <button
                                                                                 type="button"
                                                                                 onClick={() => goDashboard(c.id)}
@@ -640,6 +676,14 @@ export default function CondoHomePage() {
                                                                                 ].join(" ")}
                                                                             >
                                                                                 จัดการ
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={(e) => { e.stopPropagation(); handleDelete(c); }}
+                                                                                className="h-[40px] w-[40px] rounded-xl bg-white border border-rose-200 text-rose-500 font-black text-sm shadow-sm hover:bg-rose-50 hover:text-rose-600 active:scale-95 transition flex items-center justify-center"
+                                                                                title="ลบคอนโด"
+                                                                            >
+                                                                                ✕
                                                                             </button>
                                                                         </div>
                                                                     </div>

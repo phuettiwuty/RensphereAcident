@@ -9,7 +9,7 @@ interface FeatureCardProps {
 
 const FeatureCard: React.FC<FeatureCardProps> = ({ label, icon, onClick, bgColor }) => {
   return (
-    <button 
+    <button
       onClick={onClick}
       className="bg-white rounded-3xl p-5 flex flex-col items-start gap-4 shadow-sm border border-gray-100 hover:shadow-md hover:border-blue-100 transition-all text-left group"
     >

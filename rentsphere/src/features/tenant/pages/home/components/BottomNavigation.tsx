@@ -1,45 +1,69 @@
-import React from 'react';
-import { NavLink } from 'react-router-dom';
-import { Home, History, Bell, User } from 'lucide-react';
+import React from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { Home, History, Bell, User } from "lucide-react";
 
-const BottomNavigation: React.FC = () => {
-  const navItems = [
-    { to: '/home', icon: <Home size={22} />, label: 'หน้าแรก' },
-    { to: '/history', icon: <History size={22} />, label: 'ประวัติ' },
-    { to: '/notifications', icon: <Bell size={22} />, label: 'แจ้งเตือน' },
-    { to: '/profile', icon: <User size={22} />, label: 'โปรไฟล์' },
-  ];
+const TabButton = ({
+  active,
+  label,
+  icon,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+}) => (
+  <button
+    onClick={onClick}
+    className={`flex flex-col items-center justify-center gap-1 flex-1 py-2 ${active ? "text-blue-600" : "text-gray-400"
+      }`}
+  >
+    <div
+      className={`w-10 h-10 rounded-2xl flex items-center justify-center ${active ? "bg-blue-50" : "bg-transparent"
+        }`}
+    >
+      {icon}
+    </div>
+    <span className="text-[11px] font-bold">{label}</span>
+  </button>
+);
+
+export default function BottomNavigation() {
+  const nav = useNavigate();
+  const { pathname } = useLocation();
+
+  const is = (p: string) => pathname === p;
 
   return (
-    <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white/90 backdrop-blur-xl border-t border-gray-100 px-2 py-3 pb-8 z-50 flex justify-around items-center rounded-t-3xl shadow-[0_-10px_30px_rgba(0,0,0,0.05)]">
-      {navItems.map((item) => (
-        <NavLink
-          key={item.to}
-          to={item.to}
-          className={({ isActive }) => 
-            `flex flex-col items-center gap-1 flex-1 transition-all duration-300 ${
-              isActive ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'
-            }`
-          }
-        >
-          <div className="relative flex flex-col items-center">
-            {item.icon}
-            <span className="text-[10px] font-semibold mt-1">{item.label}</span>
-            <div className={`h-1 w-1 rounded-full bg-blue-600 mt-0.5 transition-all duration-300 opacity-0 scale-0 active-indicator`}></div>
-          </div>
-        </NavLink>
-      ))}
-      <style>{`
-        .active-indicator {
-          transition: all 0.3s ease;
-        }
-        a.active .active-indicator {
-          opacity: 1;
-          scale: 1.5;
-        }
-      `}</style>
-    </nav>
+    <div className="fixed bottom-0 left-0 right-0 z-50">
+      <div className="max-w-md mx-auto px-4 pb-4">
+        <div className="bg-white/80 backdrop-blur-xl border border-white rounded-3xl shadow-xl px-3 py-2 flex items-center">
+          <TabButton
+            active={is("/tenant/home")}
+            label="Home"
+            icon={<Home size={22} />}
+            onClick={() => nav("/tenant/home")}
+          />
+          <TabButton
+            active={is("/tenant/history")}
+            label="History"
+            icon={<History size={22} />}
+            onClick={() => nav("/tenant/history")}
+          />
+          <TabButton
+            active={is("/tenant/notifications")}
+            label="Alerts"
+            icon={<Bell size={22} />}
+            onClick={() => nav("/tenant/notifications")}
+          />
+          <TabButton
+            active={is("/tenant/profile")}
+            label="Profile"
+            icon={<User size={22} />}
+            onClick={() => nav("/tenant/profile")}
+          />
+        </div>
+      </div>
+    </div>
   );
-};
-
-export default BottomNavigation;
+}
