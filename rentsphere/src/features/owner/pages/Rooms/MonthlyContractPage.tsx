@@ -1,6 +1,6 @@
 import OwnerShell from "@/features/owner/components/OwnerShell";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 
 function moneyTHB(n?: number | null) {
     if (n == null || Number.isNaN(n)) return "0.00";
@@ -67,12 +67,30 @@ function getAuthToken(): string {
     } catch { return ""; }
 }
 
-function getCondoId(): string {
+/** หา condoId — ลำดับ: 1) navigation state  2) wizard store  3) API /condos/mine */
+async function resolveCondoId(stateCondoId?: string | null): Promise<string> {
+    if (stateCondoId) return stateCondoId;
+
+    // fallback 1: wizard store
     try {
         const raw = localStorage.getItem("rentsphere_condo_wizard");
-        if (!raw) return "";
-        return JSON.parse(raw)?.state?.condoId || "";
-    } catch { return ""; }
+        if (raw) {
+            const id = JSON.parse(raw)?.state?.condoId;
+            if (id) return id;
+        }
+    } catch { }
+
+    // fallback 2: API
+    try {
+        const res = await fetch(`${API}/api/v1/condos/mine`, { method: "GET", headers: authHeaders() });
+        if (res.ok) {
+            const data = await res.json();
+            const c = data.condo || (data.condos && data.condos[0]);
+            if (c?.id) return String(c.id);
+        }
+    } catch { }
+
+    throw new Error("ไม่พบ condoId — กรุณาเลือกคอนโดก่อน");
 }
 
 function authHeaders() {
@@ -83,9 +101,7 @@ function authHeaders() {
     };
 }
 
-async function fetchRoomDetail(roomId: string): Promise<RoomDetail> {
-    const condoId = getCondoId();
-    if (!condoId) throw new Error("ไม่พบ condoId — กรุณาสร้างคอนโดก่อน");
+async function fetchRoomDetail(roomId: string, condoId: string): Promise<RoomDetail> {
 
     const res = await fetch(`${API}/api/v1/condos/${condoId}/rooms`, {
         method: "GET",
@@ -119,6 +135,8 @@ async function fetchRoomDetail(roomId: string): Promise<RoomDetail> {
 export default function MonthlyContractPage() {
     const nav = useNavigate();
     const { roomId } = useParams();
+    const location = useLocation();
+    const stateCondoId = (location.state as any)?.condoId as string | undefined;
 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -139,7 +157,8 @@ export default function MonthlyContractPage() {
                 setLoading(true);
                 setError(null);
 
-                const data = await fetchRoomDetail(roomId);
+                const condoId = await resolveCondoId(stateCondoId);
+                const data = await fetchRoomDetail(roomId, condoId);
                 if (cancelled) return;
 
                 setRoom(data);
@@ -201,26 +220,32 @@ export default function MonthlyContractPage() {
         const tenantName = `${firstName.trim()} ${lastName.trim()}`.trim();
 
         // บันทึกสัญญาลง room_contracts
-        const condoId = getCondoId();
+        let condoId: string;
+        try {
+            condoId = await resolveCondoId(stateCondoId);
+        } catch {
+            return alert("ไม่พบ condoId — กรุณาเลือกคอนโดก่อน");
+        }
         if (condoId) {
             setSaving(true);
             try {
-                await fetch(`${API}/api/v1/condos/${condoId}/contracts`, {
+                const cRes = await fetch(`${API}/api/v1/condos/${condoId}/contracts`, {
                     method: "POST",
                     headers: authHeaders(),
                     body: JSON.stringify({
                         roomId,
+                        tenantName,
                         tenantFirstName: firstName.trim(),
                         tenantLastName: lastName.trim(),
-                        tenantPhone: phone.trim(),
-                        tenantCitizenId: citizenId.trim(),
-                        tenantAddress: address.trim(),
+                        tenantPhone: phone.trim() || null,
+                        tenantCitizenId: citizenId.trim() || null,
+                        tenantAddress: address.trim() || null,
                         checkIn,
                         checkOut: checkOut || null,
                         monthlyRent,
                         deposit,
-                        depositPayBy,
-                        bookingFee,
+                        depositPayBy: depositPayBy || null,
+                        bookingFee: bookingFee || 0,
                         bookingNo: bookingNo.trim() || null,
                         emergencyName: emgName.trim() || null,
                         emergencyRelation: emgRelation.trim() || null,
@@ -228,15 +253,26 @@ export default function MonthlyContractPage() {
                         note: note.trim() || null,
                     }),
                 });
-            } catch (e) {
+                if (!cRes.ok) {
+                    const errBody = await cRes.json().catch(() => ({}));
+                    console.error("save contract failed:", cRes.status, errBody);
+                    alert(`บันทึกสัญญาไม่สำเร็จ: ${errBody?.error || cRes.statusText} (${cRes.status})`);
+                    setSaving(false);
+                    return;
+                }
+                console.log("✅ contract saved successfully");
+            } catch (e: any) {
                 console.error("save contract error:", e);
+                alert(`บันทึกสัญญาไม่สำเร็จ: ${e?.message || "Network error"}`);
+                setSaving(false);
+                return;
             }
             setSaving(false);
         }
 
-        // ไปหน้า gen access code พร้อมข้อมูลผู้เช่า
-        nav(`/owner/rooms/${roomId}/access-code`, {
-            state: { tenantName, roomNo },
+        // ไปหน้าค่าเช่าล่วงหน้า (Step 2)
+        nav(`/owner/rooms/${roomId}/advance-payment`, {
+            state: { tenantName, roomNo, condoId },
         });
     };
 
@@ -335,8 +371,8 @@ export default function MonthlyContractPage() {
                             </div>
                             <div className="flex items-stretch">
                                 <input
-                                    value={monthlyRent}
-                                    onChange={(e) => setMonthlyRent(Number(e.target.value || 0))}
+                                    value={monthlyRent || ""}
+                                    onChange={(e) => { const v = e.target.value.replace(/[^0-9.]/g, ""); setMonthlyRent(v === "" ? 0 : parseFloat(v) || 0); }}
                                     inputMode="numeric"
                                     className="w-full rounded-l-xl border border-gray-200 bg-white px-4 py-3 font-bold text-gray-800 focus:outline-none focus:ring-4 focus:ring-blue-200/60"
                                 />
@@ -352,8 +388,8 @@ export default function MonthlyContractPage() {
                             </div>
                             <div className="flex items-stretch">
                                 <input
-                                    value={deposit}
-                                    onChange={(e) => setDeposit(Number(e.target.value || 0))}
+                                    value={deposit || ""}
+                                    onChange={(e) => { const v = e.target.value.replace(/[^0-9.]/g, ""); setDeposit(v === "" ? 0 : parseFloat(v) || 0); }}
                                     inputMode="numeric"
                                     className="w-full rounded-l-xl border border-gray-200 bg-white px-4 py-3 font-bold text-gray-800 focus:outline-none focus:ring-4 focus:ring-blue-200/60"
                                 />
@@ -382,8 +418,8 @@ export default function MonthlyContractPage() {
                             <div className="text-sm font-extrabold text-gray-800 mb-2">เงินจอง</div>
                             <div className="flex items-stretch">
                                 <input
-                                    value={bookingFee}
-                                    onChange={(e) => setBookingFee(Number(e.target.value || 0))}
+                                    value={bookingFee || ""}
+                                    onChange={(e) => { const v = e.target.value.replace(/[^0-9.]/g, ""); setBookingFee(v === "" ? 0 : parseFloat(v) || 0); }}
                                     inputMode="numeric"
                                     className="w-full rounded-l-xl border border-gray-200 bg-white px-4 py-3 font-bold text-gray-800 focus:outline-none focus:ring-4 focus:ring-blue-200/60"
                                 />

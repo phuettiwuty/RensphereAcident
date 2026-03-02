@@ -1,6 +1,40 @@
 import OwnerShell from "@/features/owner/components/OwnerShell";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+
+/* ===== helpers ===== */
+const API = import.meta.env.VITE_API_URL || "https://backendlinefacality.onrender.com";
+
+function getAuthToken(): string {
+    try {
+        const raw = localStorage.getItem("rentsphere_auth");
+        if (!raw) return "";
+        return JSON.parse(raw)?.state?.token || "";
+    } catch { return ""; }
+}
+
+function authHeaders() {
+    const token = getAuthToken();
+    return {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+}
+
+async function resolveCondoId(stateCondoId?: string | null): Promise<string> {
+    if (stateCondoId) return stateCondoId;
+    try {
+        const raw = localStorage.getItem("rentsphere_condo_wizard");
+        if (raw) { const id = JSON.parse(raw)?.state?.condoId; if (id) return id; }
+    } catch { }
+    try {
+        const res = await fetch(`${API}/api/v1/condos/mine`, { method: "GET", headers: authHeaders() });
+        if (res.ok) { const d = await res.json(); const c = d.condo || (d.condos && d.condos[0]); if (c?.id) return String(c.id); }
+    } catch { }
+    throw new Error("ไม่พบ condoId");
+}
+
+const onlyDigits = (v: string) => v.replace(/\D/g, "");
 
 /* ===== stepper ===== */
 function Stepper({ step }: { step: 1 | 2 | 3 }) {
@@ -43,9 +77,6 @@ function Stepper({ step }: { step: 1 | 2 | 3 }) {
     );
 }
 
-/* ===== helper ===== */
-const onlyDigits = (v: string) => v.replace(/\D/g, "");
-
 /* ===== types ===== */
 type RoomDetail = {
     id: string;
@@ -53,69 +84,75 @@ type RoomDetail = {
     condoName?: string | null;
 };
 
-type RoomMeters = {
-    waterMeter: string;
-    elecMeter: string;
-};
-
-/* ===== Backend calls (แก้ endpoint ให้ตรง) ===== */
-async function fetchRoomDetail(roomId: string): Promise<RoomDetail> {
-    // TODO: GET /api/owner/rooms/:roomId
-    const res = await fetch(`/api/owner/rooms/${encodeURIComponent(roomId)}`, {
+/* ===== Backend calls ===== */
+async function fetchRoomDetail(roomId: string, condoId: string): Promise<RoomDetail> {
+    const res = await fetch(`${API}/api/v1/condos/${condoId}/rooms`, {
         method: "GET",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
     });
-
     if (!res.ok) throw new Error("โหลดข้อมูลห้องไม่สำเร็จ");
     const data = await res.json();
+    const rooms: any[] = data.rooms || [];
+    const r = rooms.find((rm: any) => rm.id === roomId);
+    if (!r) throw new Error("ไม่พบห้องนี้ในระบบ");
+
+    let condoName = "คอนโดมิเนียม";
+    try {
+        const cRes = await fetch(`${API}/api/v1/condos/mine`, { method: "GET", headers: authHeaders() });
+        if (cRes.ok) {
+            const cData = await cRes.json();
+            const c = cData.condo || (cData.condos && cData.condos[0]);
+            if (c) condoName = c.name_th || c.nameTh || c.name || condoName;
+        }
+    } catch { }
 
     return {
-        id: String(data.id ?? roomId),
-        roomNo: String(data.roomNo ?? data.number ?? "-"),
-        condoName: data.condoName ?? data.condo?.name ?? null,
+        id: String(r.id),
+        roomNo: String(r.room_no || r.roomNo || "-"),
+        condoName,
     };
 }
 
-async function fetchRoomMeters(roomId: string): Promise<RoomMeters | null> {
-    // TODO: GET /api/owner/rooms/:roomId/meters
-    const res = await fetch(`/api/owner/rooms/${encodeURIComponent(roomId)}/meters`, {
-        method: "GET",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-    });
-
-    // ถ้า backend ยังไม่มี endpoint นี้ อาจคืน 404 ถือว่ายังไม่มีข้อมูล
-    if (res.status === 404) return null;
-    if (!res.ok) throw new Error("โหลดข้อมูลมิเตอร์ไม่สำเร็จ");
-
-    const data = await res.json();
-    return {
-        waterMeter: String(data.waterMeter ?? data.water ?? ""),
-        elecMeter: String(data.elecMeter ?? data.electric ?? ""),
+async function saveRoomMeters(condoId: string, roomId: string, payload: {
+    waterMeter: string;
+    elecMeter: string;
+}): Promise<void> {
+    // Backend expects separate requests per type: "water" and "electricity"
+    const saveOne = async (type: string, value: string) => {
+        const res = await fetch(`${API}/api/v1/condos/${condoId}/meters`, {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({
+                roomId,
+                type,
+                previousReading: 0,
+                currentReading: Number(value || 0),
+            }),
+        });
+        if (!res.ok) {
+            const d = await res.json().catch(() => ({}));
+            throw new Error(d?.error || `บันทึกมิเตอร์ ${type} ไม่สำเร็จ`);
+        }
     };
-}
 
-async function saveRoomMeters(roomId: string, payload: RoomMeters): Promise<void> {
-    // TODO: POST/PUT /api/owner/rooms/:roomId/meters
-    const res = await fetch(`/api/owner/rooms/${encodeURIComponent(roomId)}/meters`, {
-        method: "POST",//backend
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-    });
-
-    if (!res.ok) throw new Error("บันทึกเลขมิเตอร์ไม่สำเร็จ");
+    await Promise.all([
+        saveOne("water", payload.waterMeter),
+        saveOne("electricity", payload.elecMeter),
+    ]);
 }
 
 export default function RoomMeterPage() {
     const nav = useNavigate();
     const { roomId } = useParams();
+    const location = useLocation();
+    const stateCondoId = (location.state as any)?.condoId as string | undefined;
+    const stateTenantName = (location.state as any)?.tenantName as string | undefined;
+    const stateRoomNo = (location.state as any)?.roomNo as string | undefined;
 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-
     const [room, setRoom] = useState<RoomDetail | null>(null);
+    const [resolvedCondoId, setResolvedCondoId] = useState<string>("");
 
     /* ===== form state ===== */
     const [waterMeter, setWaterMeter] = useState("");
@@ -137,20 +174,13 @@ export default function RoomMeterPage() {
                 setLoading(true);
                 setError(null);
 
-                const [detail, meters] = await Promise.all([
-                    fetchRoomDetail(roomId),
-                    fetchRoomMeters(roomId),
-                ]);
+                const condoId = await resolveCondoId(stateCondoId);
+                setResolvedCondoId(condoId);
 
+                const detail = await fetchRoomDetail(roomId, condoId);
                 if (cancelled) return;
 
                 setRoom(detail);
-
-                if (meters) {
-                    setWaterMeter(onlyDigits(meters.waterMeter));
-                    setElecMeter(onlyDigits(meters.elecMeter));
-                }
-
                 setLoading(false);
             } catch (e: any) {
                 if (cancelled) return;
@@ -161,19 +191,14 @@ export default function RoomMeterPage() {
         };
 
         load();
-        return () => {
-            cancelled = true;
-        };
+        return () => { cancelled = true; };
     }, [roomId]);
 
     const condoName = useMemo(() => room?.condoName ?? "คอนโดมิเนียม", [room]);
-    const roomNo = useMemo(() => room?.roomNo ?? "-", [room]);
+    const roomNo = useMemo(() => stateRoomNo ?? room?.roomNo ?? "-", [room, stateRoomNo]);
 
     const goBack = () => {
-        if (!roomId) {
-            nav("/owner/rooms", { replace: true });
-            return;
-        }
+        if (!roomId) { nav("/owner/rooms", { replace: true }); return; }
         nav(-1);
     };
 
@@ -187,8 +212,13 @@ export default function RoomMeterPage() {
 
         setSaving(true);
         try {
-            await saveRoomMeters(roomId, { waterMeter, elecMeter });
-            nav(`/owner/rooms/${roomId}/access-code`, { replace: true });
+            if (resolvedCondoId) {
+                await saveRoomMeters(resolvedCondoId, roomId, { waterMeter, elecMeter });
+            }
+            // ไปหน้า gen access code (Step สุดท้าย)
+            nav(`/owner/rooms/${roomId}/access-code`, {
+                state: { tenantName: stateTenantName, roomNo, condoId: resolvedCondoId },
+            });
         } catch (e: any) {
             alert(e?.message ?? "บันทึกไม่สำเร็จ");
         } finally {
@@ -215,19 +245,12 @@ export default function RoomMeterPage() {
                     {error && <div className="text-rose-600 font-extrabold mb-6">{error}</div>}
 
                     <div className="flex items-center gap-3">
-                        <button
-                            type="button"
-                            onClick={() => nav("/owner/rooms", { replace: true })}
-                            className="px-5 py-3 rounded-xl bg-blue-600 text-white font-extrabold"
-                        >
+                        <button type="button" onClick={() => nav("/owner/rooms", { replace: true })}
+                            className="px-5 py-3 rounded-xl bg-blue-600 text-white font-extrabold">
                             กลับไปหน้าห้อง
                         </button>
-
-                        <button
-                            type="button"
-                            onClick={() => window.location.reload()}
-                            className="px-5 py-3 rounded-xl bg-white border border-gray-200 text-gray-800 font-extrabold hover:bg-gray-50"
-                        >
+                        <button type="button" onClick={() => window.location.reload()}
+                            className="px-5 py-3 rounded-xl bg-white border border-gray-200 text-gray-800 font-extrabold hover:bg-gray-50">
                             ลองใหม่
                         </button>
                     </div>
@@ -269,6 +292,7 @@ export default function RoomMeterPage() {
                                     value={waterMeter}
                                     onChange={(e) => setWaterMeter(onlyDigits(e.target.value))}
                                     inputMode="numeric"
+                                    placeholder="เช่น 1234"
                                     className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-extrabold text-gray-900
                   focus:outline-none focus:ring-4 focus:ring-blue-200/60"
                                 />
@@ -282,6 +306,7 @@ export default function RoomMeterPage() {
                                     value={elecMeter}
                                     onChange={(e) => setElecMeter(onlyDigits(e.target.value))}
                                     inputMode="numeric"
+                                    placeholder="เช่น 5678"
                                     className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-extrabold text-gray-900
                   focus:outline-none focus:ring-4 focus:ring-blue-200/60"
                                 />
@@ -290,21 +315,14 @@ export default function RoomMeterPage() {
                     </div>
 
                     <div className="mt-8 flex items-center justify-end gap-4">
-                        <button
-                            type="button"
-                            onClick={goBack}
-                            className="px-5 py-3 rounded-xl bg-white border border-gray-200 text-gray-800 font-extrabold"
-                        >
+                        <button type="button" onClick={goBack}
+                            className="px-5 py-3 rounded-xl bg-white border border-gray-200 text-gray-800 font-extrabold">
                             ย้อนกลับ
                         </button>
 
-                        <button
-                            type="button"
-                            onClick={onSave}
-                            disabled={saving}
-                            className="px-7 py-3 rounded-xl !bg-blue-600 text-white font-extrabold shadow-lg hover:!bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
-                        >
-                            {saving ? "กำลังบันทึก..." : "บันทึก"}
+                        <button type="button" onClick={onSave} disabled={saving}
+                            className="px-7 py-3 rounded-xl !bg-blue-600 text-white font-extrabold shadow-lg hover:!bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed">
+                            {saving ? "กำลังบันทึก..." : "บันทึกและต่อไป"}
                         </button>
                     </div>
                 </div>

@@ -1,7 +1,8 @@
 import OwnerShell from "@/features/owner/components/OwnerShell";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 
+/* ===== helpers ===== */
 function moneyTHB(n?: number | null) {
     if (n == null || Number.isNaN(n)) return "0.00";
     return new Intl.NumberFormat("th-TH", {
@@ -10,6 +11,39 @@ function moneyTHB(n?: number | null) {
     }).format(n);
 }
 
+const API = import.meta.env.VITE_API_URL || "https://backendlinefacality.onrender.com";
+
+function getAuthToken(): string {
+    try {
+        const raw = localStorage.getItem("rentsphere_auth");
+        if (!raw) return "";
+        return JSON.parse(raw)?.state?.token || "";
+    } catch { return ""; }
+}
+
+function authHeaders() {
+    const token = getAuthToken();
+    return {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+}
+
+/** หา condoId — ลำดับ: 1) navigation state  2) wizard store  3) API */
+async function resolveCondoId(stateCondoId?: string | null): Promise<string> {
+    if (stateCondoId) return stateCondoId;
+    try {
+        const raw = localStorage.getItem("rentsphere_condo_wizard");
+        if (raw) { const id = JSON.parse(raw)?.state?.condoId; if (id) return id; }
+    } catch { }
+    try {
+        const res = await fetch(`${API}/api/v1/condos/mine`, { method: "GET", headers: authHeaders() });
+        if (res.ok) { const d = await res.json(); const c = d.condo || (d.condos && d.condos[0]); if (c?.id) return String(c.id); }
+    } catch { }
+    throw new Error("ไม่พบ condoId");
+}
+
+/* ===== stepper (3 steps shown here + step 4 gen-code is separate) ===== */
 function Stepper({ step }: { step: 1 | 2 | 3 }) {
     const items = [
         { n: 1, label: "สัญญา" },
@@ -22,7 +56,6 @@ function Stepper({ step }: { step: 1 | 2 | 3 }) {
             {items.map((it, idx) => {
                 const active = it.n === step;
                 const done = it.n < step;
-
                 return (
                     <div key={it.n} className="flex items-center gap-3">
                         <div
@@ -37,11 +70,9 @@ function Stepper({ step }: { step: 1 | 2 | 3 }) {
                         >
                             {it.n}
                         </div>
-
                         <div className={active ? "font-extrabold text-blue-700" : "font-bold text-gray-600"}>
                             {it.label}
                         </div>
-
                         {idx !== items.length - 1 ? <div className="w-20 h-[3px] rounded-full bg-blue-100" /> : null}
                     </div>
                 );
@@ -58,34 +89,70 @@ type RoomDetail = {
     condoName?: string | null;
 };
 
-/* ===== Backend call (แก้ endpoint ให้ตรง) ===== */
-async function fetchRoomDetail(roomId: string): Promise<RoomDetail> {
-    // TODO: GET /api/owner/rooms/:roomId
-    const res = await fetch(`/api/owner/rooms/${encodeURIComponent(roomId)}`, {
+/* ===== Backend calls ===== */
+async function fetchRoomDetail(roomId: string, condoId: string): Promise<RoomDetail> {
+    const res = await fetch(`${API}/api/v1/condos/${condoId}/rooms`, {
         method: "GET",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
     });
-
     if (!res.ok) throw new Error("โหลดข้อมูลห้องไม่สำเร็จ");
     const data = await res.json();
+    const rooms: any[] = data.rooms || [];
+    const r = rooms.find((rm: any) => rm.id === roomId);
+    if (!r) throw new Error("ไม่พบห้องนี้ในระบบ");
 
-    // TODO: ปรับ mapping ตาม response จริง
+    let condoName = "คอนโดมิเนียม";
+    try {
+        const cRes = await fetch(`${API}/api/v1/condos/mine`, { method: "GET", headers: authHeaders() });
+        if (cRes.ok) {
+            const cData = await cRes.json();
+            const c = cData.condo || (cData.condos && cData.condos[0]);
+            if (c) condoName = c.name_th || c.nameTh || c.name || condoName;
+        }
+    } catch { }
+
     return {
-        id: String(data.id ?? roomId),
-        roomNo: String(data.roomNo ?? data.number ?? "-"),
-        price: data.price ?? 0,
-        condoName: data.condoName ?? data.condo?.name ?? null,
+        id: String(r.id),
+        roomNo: String(r.room_no || r.roomNo || "-"),
+        price: r.price != null ? Number(r.price) : null,
+        condoName,
     };
+}
+
+async function saveAdvancePayment(condoId: string, roomId: string, payload: {
+    totalAmount: number;
+    dueDate: string;
+    note: string;
+}): Promise<void> {
+    const res = await fetch(`${API}/api/v1/condos/${condoId}/invoices`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+            roomId,
+            totalAmount: payload.totalAmount,
+            dueDate: payload.dueDate || null,
+            note: payload.note || "ค่าเช่าล่วงหน้า",
+        }),
+    });
+    if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d?.error || "บันทึกค่าเช่าล่วงหน้าไม่สำเร็จ");
+    }
 }
 
 export default function AdvancePaymentPage() {
     const nav = useNavigate();
     const { roomId } = useParams();
+    const location = useLocation();
+    const stateCondoId = (location.state as any)?.condoId as string | undefined;
+    const stateTenantName = (location.state as any)?.tenantName as string | undefined;
+    const stateRoomNo = (location.state as any)?.roomNo as string | undefined;
 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [room, setRoom] = useState<RoomDetail | null>(null);
+    const [resolvedCondoId, setResolvedCondoId] = useState<string>("");
+    const [saving, setSaving] = useState(false);
 
     useEffect(() => {
         let cancelled = false;
@@ -102,7 +169,10 @@ export default function AdvancePaymentPage() {
                 setLoading(true);
                 setError(null);
 
-                const data = await fetchRoomDetail(roomId);
+                const condoId = await resolveCondoId(stateCondoId);
+                setResolvedCondoId(condoId);
+
+                const data = await fetchRoomDetail(roomId, condoId);
                 if (cancelled) return;
 
                 setRoom(data);
@@ -116,56 +186,60 @@ export default function AdvancePaymentPage() {
         };
 
         load();
-        return () => {
-            cancelled = true;
-        };
+        return () => { cancelled = true; };
     }, [roomId]);
 
     const condoName = room?.condoName ?? "คอนโดมิเนียม";
-    const roomNo = room?.roomNo ?? "-";
+    const roomNo = stateRoomNo ?? room?.roomNo ?? "-";
     const rent = room?.price ?? 0;
 
-    // ===== state (โครง) =====
+    // ===== form state =====
     const [roundDate, setRoundDate] = useState("");
     const [detail, setDetail] = useState("");
     const [payBy, setPayBy] = useState("เงินสด");
     const [note, setNote] = useState("");
-
     const [advanceMonths, setAdvanceMonths] = useState<number>(1);
 
-    // กัน input ติดลบ / NaN
     const safeMonths = useMemo(() => {
         const m = Number(advanceMonths);
         if (!Number.isFinite(m)) return 0;
         return Math.max(0, Math.floor(m));
     }, [advanceMonths]);
 
-    const advanceAmount = useMemo(() => {
-        return (rent || 0) * safeMonths;
-    }, [rent, safeMonths]);
+    const advanceAmount = useMemo(() => (rent || 0) * safeMonths, [rent, safeMonths]);
 
-    // ตั้งค่า detail อัตโนมัติแบบโครง ถ้าผู้ใช้ยังไม่กรอก
     useEffect(() => {
         if (detail.trim()) return;
         if (!safeMonths) return;
         setDetail(`ค่าเช่าล่วงหน้า ${safeMonths} เดือน`);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [safeMonths]);
 
     const goBack = () => {
-        if (!roomId) {
-            nav("/owner/rooms", { replace: true });
-            return;
-        }
-        nav(`/owner/rooms/${roomId}/monthly-contract`, { replace: true });
+        if (!roomId) { nav("/owner/rooms", { replace: true }); return; }
+        nav(-1);
     };
 
-    const goNext = () => {
-        if (!roomId) {
-            nav("/owner/rooms", { replace: true });
-            return;
+    const goNext = async () => {
+        if (!roomId) { nav("/owner/rooms", { replace: true }); return; }
+
+        // บันทึกค่าเช่าล่วงหน้าเป็น invoice (ถ้ามียอด > 0)
+        if (advanceAmount > 0 && resolvedCondoId) {
+            setSaving(true);
+            try {
+                await saveAdvancePayment(resolvedCondoId, roomId, {
+                    totalAmount: advanceAmount,
+                    dueDate: roundDate || new Date().toISOString().slice(0, 10),
+                    note: `${detail || "ค่าเช่าล่วงหน้า"} | ชำระโดย: ${payBy}${note ? " | " + note : ""}`,
+                });
+            } catch (e) {
+                console.error("save advance payment error:", e);
+            }
+            setSaving(false);
         }
-        nav(`/owner/rooms/${roomId}/meter`, { replace: true });
+
+        nav(`/owner/rooms/${roomId}/meter`, {
+            state: { tenantName: stateTenantName, roomNo, condoId: resolvedCondoId },
+        });
     };
 
     if (loading) {
@@ -187,19 +261,12 @@ export default function AdvancePaymentPage() {
                     {error && <div className="text-rose-600 font-extrabold mb-6">{error}</div>}
 
                     <div className="flex items-center gap-3">
-                        <button
-                            type="button"
-                            onClick={() => nav("/owner/rooms", { replace: true })}
-                            className="px-5 py-3 rounded-xl bg-blue-600 text-white font-extrabold hover:bg-blue-700"
-                        >
+                        <button type="button" onClick={() => nav("/owner/rooms", { replace: true })}
+                            className="px-5 py-3 rounded-xl bg-blue-600 text-white font-extrabold hover:bg-blue-700">
                             กลับไปหน้าห้อง
                         </button>
-
-                        <button
-                            type="button"
-                            onClick={() => window.location.reload()}
-                            className="px-5 py-3 rounded-xl bg-white border border-gray-200 text-gray-800 font-extrabold hover:bg-gray-50"
-                        >
+                        <button type="button" onClick={() => window.location.reload()}
+                            className="px-5 py-3 rounded-xl bg-white border border-gray-200 text-gray-800 font-extrabold hover:bg-gray-50">
                             ลองใหม่
                         </button>
                     </div>
@@ -224,36 +291,27 @@ export default function AdvancePaymentPage() {
                 </div>
 
                 <div className="p-6">
-                    {/* header */}
                     <div className="mb-4">
                         <div className="text-xl font-extrabold text-gray-900">รับเงินค่าเช่าล่วงหน้า ตอนทำสัญญา</div>
-                        <div className="text-sm font-bold text-gray-500 mt-1">คำนวณจากจำนวนเดือนล่วงหน้า × ค่าเช่าต่อเดือน</div>
+                        <div className="text-sm font-bold text-gray-500 mt-1">คำนวณจากจำนวนเดือนล่วงหน้า × ค่าเช่าต่อเดือน ({moneyTHB(rent)} บาท)</div>
                     </div>
                     <div className="h-px bg-gray-200 mb-6" />
 
-                    {/* form */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                         <div>
                             <div className="text-sm font-extrabold text-gray-800 mb-2">
                                 รอบบิล / วันที่ <span className="text-rose-600">*</span>
                             </div>
-                            <input
-                                type="date"
-                                value={roundDate}
-                                onChange={(e) => setRoundDate(e.target.value)}
-                                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-bold text-gray-800 focus:outline-none focus:ring-4 focus:ring-blue-200/60"
-                            />
+                            <input type="date" value={roundDate} onChange={(e) => setRoundDate(e.target.value)}
+                                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-bold text-gray-800 focus:outline-none focus:ring-4 focus:ring-blue-200/60" />
                         </div>
 
                         <div>
                             <div className="text-sm font-extrabold text-gray-800 mb-2">
                                 ชำระเงินโดย <span className="text-rose-600">*</span>
                             </div>
-                            <select
-                                value={payBy}
-                                onChange={(e) => setPayBy(e.target.value)}
-                                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-bold text-gray-800 focus:outline-none focus:ring-4 focus:ring-blue-200/60"
-                            >
+                            <select value={payBy} onChange={(e) => setPayBy(e.target.value)}
+                                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-bold text-gray-800 focus:outline-none focus:ring-4 focus:ring-blue-200/60">
                                 <option value="เงินสด">เงินสด</option>
                                 <option value="โอน">โอน</option>
                                 <option value="บัตร">บัตร</option>
@@ -261,76 +319,53 @@ export default function AdvancePaymentPage() {
                         </div>
 
                         <div className="lg:col-span-2">
-                            <div className="text-sm font-extrabold text-gray-800 mb-2">รายละเอียด (สำหรับแสดงในสัญญา/ใบเสร็จ)</div>
-                            <input
-                                value={detail}
-                                onChange={(e) => setDetail(e.target.value)}
+                            <div className="text-sm font-extrabold text-gray-800 mb-2">รายละเอียด</div>
+                            <input value={detail} onChange={(e) => setDetail(e.target.value)}
                                 placeholder="เช่น ค่าเช่าล่วงหน้า 1 เดือน"
-                                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-bold text-gray-800 focus:outline-none focus:ring-4 focus:ring-blue-200/60"
-                            />
+                                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-bold text-gray-800 focus:outline-none focus:ring-4 focus:ring-blue-200/60" />
                         </div>
 
-                        {/* months + amount */}
                         <div>
                             <div className="text-sm font-extrabold text-gray-800 mb-2">
                                 จำนวนเดือนล่วงหน้า <span className="text-rose-600">*</span>
                             </div>
                             <div className="flex items-stretch">
-                                <input
-                                    value={advanceMonths}
-                                    onChange={(e) => setAdvanceMonths(Number(e.target.value || 0))}
-                                    inputMode="numeric"
-                                    className="w-full rounded-l-xl border border-gray-200 bg-white px-4 py-3 font-bold text-gray-800 focus:outline-none focus:ring-4 focus:ring-blue-200/60"
-                                />
-                                <div className="rounded-r-xl border border-l-0 border-gray-200 bg-gray-100 px-4 py-3 font-extrabold text-gray-700">
-                                    เดือน
-                                </div>
+                                <input value={advanceMonths || ""} onChange={(e) => {
+                                    const v = e.target.value.replace(/[^0-9]/g, "");
+                                    setAdvanceMonths(v === "" ? 0 : parseInt(v) || 0);
+                                }} inputMode="numeric"
+                                    className="w-full rounded-l-xl border border-gray-200 bg-white px-4 py-3 font-bold text-gray-800 focus:outline-none focus:ring-4 focus:ring-blue-200/60" />
+                                <div className="rounded-r-xl border border-l-0 border-gray-200 bg-gray-100 px-4 py-3 font-extrabold text-gray-700">เดือน</div>
                             </div>
                         </div>
 
                         <div>
                             <div className="text-sm font-extrabold text-gray-800 mb-2">
-                                จำนวนเงินค่าเช่าล่วงหน้า <span className="text-rose-600">*</span>
+                                จำนวนเงินค่าเช่าล่วงหน้า
                             </div>
                             <div className="flex items-stretch">
-                                <input
-                                    value={moneyTHB(advanceAmount)}
-                                    readOnly
-                                    className="w-full rounded-l-xl border border-gray-200 bg-white px-4 py-3 font-extrabold text-gray-900 focus:outline-none"
-                                />
-                                <div className="rounded-r-xl border border-l-0 border-gray-200 bg-gray-100 px-4 py-3 font-extrabold text-gray-700">
-                                    บาท
-                                </div>
+                                <input value={moneyTHB(advanceAmount)} readOnly
+                                    className="w-full rounded-l-xl border border-gray-200 bg-white px-4 py-3 font-extrabold text-gray-900 focus:outline-none" />
+                                <div className="rounded-r-xl border border-l-0 border-gray-200 bg-gray-100 px-4 py-3 font-extrabold text-gray-700">บาท</div>
                             </div>
                         </div>
 
                         <div className="lg:col-span-2">
                             <div className="text-sm font-bold text-gray-700 mb-2">Note</div>
-                            <textarea
-                                value={note}
-                                onChange={(e) => setNote(e.target.value)}
-                                rows={3}
-                                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-bold text-gray-800 focus:outline-none focus:ring-4 focus:ring-blue-200/60"
-                            />
+                            <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3}
+                                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 font-bold text-gray-800 focus:outline-none focus:ring-4 focus:ring-blue-200/60" />
                         </div>
                     </div>
 
                     {/* footer */}
                     <div className="mt-8 flex items-center justify-end gap-3">
-                        <button
-                            type="button"
-                            onClick={goBack}
-                            className="px-5 py-3 rounded-xl bg-white border border-gray-200 text-gray-800 font-extrabold hover:bg-gray-50"
-                        >
+                        <button type="button" onClick={goBack}
+                            className="px-5 py-3 rounded-xl bg-white border border-gray-200 text-gray-800 font-extrabold hover:bg-gray-50">
                             ย้อนกลับ
                         </button>
-
-                        <button
-                            type="button"
-                            onClick={goNext}
-                            className="px-7 py-3 rounded-xl !bg-blue-600 text-white font-extrabold shadow-[0_12px_22px_rgba(37,99,235,0.22)] hover:!bg-blue-700"
-                        >
-                            ต่อไป
+                        <button type="button" onClick={goNext} disabled={saving}
+                            className="px-7 py-3 rounded-xl !bg-blue-600 text-white font-extrabold shadow-[0_12px_22px_rgba(37,99,235,0.22)] hover:!bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed">
+                            {saving ? "กำลังบันทึก..." : "ต่อไป"}
                         </button>
                     </div>
                 </div>
