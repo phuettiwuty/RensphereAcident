@@ -1,6 +1,6 @@
 import OwnerShell from "@/features/owner/components/OwnerShell";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 
 function moneyTHB(n?: number | null) {
     if (n == null) return "-";
@@ -55,6 +55,16 @@ type RoomDetail = {
     condoName?: string | null;
 };
 
+type TenantInfo = {
+    dormUserId: string;
+    fullName: string;
+    phone: string;
+    email: string;
+    registeredAt: string;
+    room: string;
+    accessCode: string;
+};
+
 type ServiceOption = {
     id: string;
     name: string;
@@ -63,7 +73,7 @@ type ServiceOption = {
 
 type MonthlyServiceRow = { id: string; name: string; price: number };
 
-/* ====== Backend call (แก้ endpoint ให้ตรง) ====== */
+/* ====== Backend call ====== */
 const API = import.meta.env.VITE_API_URL || "https://backendlinefacality.onrender.com";
 
 function getAuthToken(): string {
@@ -71,14 +81,6 @@ function getAuthToken(): string {
         const raw = localStorage.getItem("rentsphere_auth");
         if (!raw) return "";
         return JSON.parse(raw)?.state?.token || "";
-    } catch { return ""; }
-}
-
-function getCondoId(): string {
-    try {
-        const raw = localStorage.getItem("rentsphere_condo_wizard");
-        if (!raw) return "";
-        return JSON.parse(raw)?.state?.condoId || "";
     } catch { return ""; }
 }
 
@@ -90,10 +92,33 @@ function authHeaders() {
     };
 }
 
-async function fetchRoomDetail(roomId: string): Promise<RoomDetail> {
-    const condoId = getCondoId();
-    if (!condoId) throw new Error("ไม่พบ condoId — กรุณาสร้างคอนโดก่อน");
+/** หา condoId — ลำดับ: 1) navigation state  2) wizard store  3) API /condos/mine */
+async function resolveCondoId(stateCondoId?: string | null): Promise<string> {
+    if (stateCondoId) return stateCondoId;
 
+    // fallback 1: wizard store
+    try {
+        const raw = localStorage.getItem("rentsphere_condo_wizard");
+        if (raw) {
+            const id = JSON.parse(raw)?.state?.condoId;
+            if (id) return id;
+        }
+    } catch { }
+
+    // fallback 2: API
+    try {
+        const res = await fetch(`${API}/api/v1/condos/mine`, { method: "GET", headers: authHeaders() });
+        if (res.ok) {
+            const data = await res.json();
+            const c = data.condo || (data.condos && data.condos[0]);
+            if (c?.id) return String(c.id);
+        }
+    } catch { }
+
+    throw new Error("ไม่พบ condoId — กรุณาเลือกคอนโดก่อน");
+}
+
+async function fetchRoomDetail(roomId: string, condoId: string): Promise<RoomDetail> {
     const res = await fetch(`${API}/api/v1/condos/${condoId}/rooms`, {
         method: "GET",
         headers: authHeaders(),
@@ -111,7 +136,8 @@ async function fetchRoomDetail(roomId: string): Promise<RoomDetail> {
         const cRes = await fetch(`${API}/api/v1/condos/mine`, { method: "GET", headers: authHeaders() });
         if (cRes.ok) {
             const cData = await cRes.json();
-            const c = cData.condo || (cData.condos && cData.condos[0]);
+            const list = cData.condos || (cData.condo ? [cData.condo] : []);
+            const c = list.find((x: any) => String(x.id) === condoId) || list[0];
             if (c) condoName = c.name_th || c.nameTh || c.name || condoName;
         }
     } catch { }
@@ -127,8 +153,7 @@ async function fetchRoomDetail(roomId: string): Promise<RoomDetail> {
 }
 
 /* ====== Services backend  ====== */
-async function fetchServiceOptions(_roomId: string): Promise<ServiceOption[]> {
-    const condoId = getCondoId();
+async function fetchServiceOptions(_roomId: string, condoId: string): Promise<ServiceOption[]> {
     if (!condoId) return [];
 
     try {
@@ -152,9 +177,62 @@ async function saveMonthlyServiceForRoom(_roomId: string, _serviceId: string) {
     return;
 }
 
+/** ดึงข้อมูลผู้เช่าที่ผูกกับห้องนี้ */
+async function fetchTenantForRoom(roomNo: string, condoId: string): Promise<TenantInfo | null> {
+    try {
+        const res = await fetch(`${API}/admin/tenants?condoId=${encodeURIComponent(condoId)}`, {
+            method: "GET",
+            headers: authHeaders(),
+        });
+        if (!res.ok) {
+            console.warn("[fetchTenantForRoom] API failed:", res.status);
+            return null;
+        }
+        const data = await res.json();
+        // backend ส่งกลับ { ok, items } — fallback อ่าน tenants/array ด้วย
+        const tenants: any[] = data.items || data.tenants || (Array.isArray(data) ? data : []);
+        console.log("[fetchTenantForRoom] roomNo=", roomNo, "tenants=", tenants.length, tenants.map((t: any) => t.room));
+
+        // เทียบ roomNo แบบ trim + string
+        const t = tenants.find((x: any) => String(x.room ?? "").trim() === String(roomNo).trim());
+        if (!t) {
+            console.warn("[fetchTenantForRoom] ไม่พบผู้เช่าในห้อง", roomNo);
+            return null;
+        }
+        return {
+            dormUserId: String(t.id || ""),
+            fullName: t.full_name || "ผู้เช่า",
+            phone: t.phone || "—",
+            email: t.email || "—",
+            registeredAt: t.registered_at || t.created_at || "—",
+            room: t.room || roomNo,
+            accessCode: t.code || t.access_code || "—",
+        };
+    } catch (e) {
+        console.error("[fetchTenantForRoom] error:", e);
+        return null;
+    }
+}
+
+/** ยุติสัญญา — ลบ dorm_user + เปลี่ยนห้องกลับเป็น VACANT */
+async function terminateContract(dormUserId: string, roomId: string, condoId: string): Promise<void> {
+    // 1) ลบ dorm_user
+    const r1 = await fetch(`${API}/admin/terminate-contract`, {
+        method: "DELETE",
+        headers: authHeaders(),
+        body: JSON.stringify({ dormUserId, roomId, condoId }),
+    });
+    if (!r1.ok) {
+        const d = await r1.json().catch(() => ({}));
+        throw new Error(d?.error || "ยุติสัญญาไม่สำเร็จ");
+    }
+}
+
 export default function RoomDetailPage() {
     const nav = useNavigate();
     const { roomId } = useParams();
+    const location = useLocation();
+    const stateCondoId = (location.state as any)?.condoId as string | undefined;
 
     const btnPrimary =
         "inline-flex items-center justify-center rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-extrabold text-white shadow-[0_10px_20px_rgba(37,99,235,0.18)] hover:bg-blue-700 active:scale-[0.99] transition";
@@ -178,6 +256,12 @@ export default function RoomDetailPage() {
     // list ของบริการที่ผูกแล้ว
     const [monthlyServices, setMonthlyServices] = useState<MonthlyServiceRow[]>([]);
 
+    // ===== tenant info =====
+    const [tenant, setTenant] = useState<TenantInfo | null>(null);
+    const [showTerminateModal, setShowTerminateModal] = useState(false);
+    const [terminating, setTerminating] = useState(false);
+    const [resolvedCondoId, setResolvedCondoId] = useState<string>("");
+
     useEffect(() => {
         let cancelled = false;
 
@@ -192,13 +276,24 @@ export default function RoomDetailPage() {
                 setLoading(true);
                 setError(null);
 
-                const data = await fetchRoomDetail(roomId);
+                const condoId = await resolveCondoId(stateCondoId);
+                setResolvedCondoId(condoId);
+
+                const data = await fetchRoomDetail(roomId, condoId);
                 if (cancelled) return;
                 setRoom(data);
 
+                // โหลดข้อมูลผู้เช่า (ถ้าห้องไม่ว่าง)
+                if (data.status !== "VACANT") {
+                    const t = await fetchTenantForRoom(data.roomNo, condoId);
+                    if (!cancelled) setTenant(t);
+                } else {
+                    setTenant(null);
+                }
+
                 //โหลดรายการบริการ (backend)
                 setServiceLoading(true);
-                const services = await fetchServiceOptions(roomId);
+                const services = await fetchServiceOptions(roomId, condoId);
                 if (cancelled) return;
                 setServiceOptions(services);
 
@@ -379,6 +474,69 @@ export default function RoomDetailPage() {
                     ค่าเช่า: <span className="text-gray-900 font-extrabold">{moneyTHB(roomPrice)}</span>
                 </div>
             </div>
+
+            {/* ===== Tenant Info (ถ้าห้องไม่ว่าง) ===== */}
+            {tenant && roomStatus !== "VACANT" && (
+                <div className="mb-6 rounded-2xl border border-blue-100/70 bg-white overflow-hidden shadow-sm">
+                    <div className="px-6 py-4 bg-[#F3F7FF] border-b border-blue-100/70 flex items-center justify-between">
+                        <div className="text-lg font-extrabold text-gray-900">ข้อมูลผู้เช่า</div>
+                        <StatusPill status="OCCUPIED" />
+                    </div>
+
+                    <div className="p-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                            <div>
+                                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">ชื่อ-สกุล</div>
+                                <div className="text-base font-extrabold text-gray-900">{tenant.fullName}</div>
+                            </div>
+                            <div>
+                                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">ห้อง</div>
+                                <div className="text-base font-extrabold text-gray-900">{tenant.room}</div>
+                            </div>
+                            <div>
+                                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">โทรศัพท์</div>
+                                <div className="text-base font-bold text-gray-700">{tenant.phone}</div>
+                            </div>
+                            <div>
+                                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">อีเมล</div>
+                                <div className="text-base font-bold text-gray-700">{tenant.email}</div>
+                            </div>
+                            <div>
+                                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">วันที่ลงทะเบียน</div>
+                                <div className="text-base font-bold text-gray-700">
+                                    {tenant.registeredAt !== "—"
+                                        ? new Date(tenant.registeredAt).toLocaleDateString("th-TH", { year: "numeric", month: "long", day: "numeric" })
+                                        : "—"}
+                                </div>
+                            </div>
+                            <div>
+                                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">รหัสเข้าใช้งาน</div>
+                                <div className="text-base font-bold text-gray-700 font-mono">{tenant.accessCode}</div>
+                            </div>
+                        </div>
+
+                        <div className="mt-6 pt-5 border-t border-gray-100 flex items-center justify-end">
+                            <button
+                                type="button"
+                                onClick={() => setShowTerminateModal(true)}
+                                className={[
+                                    "inline-flex items-center gap-2 px-6 py-3 rounded-xl",
+                                    "bg-rose-600 text-white font-extrabold text-sm",
+                                    "shadow-[0_10px_20px_rgba(225,29,72,0.2)]",
+                                    "hover:bg-rose-700 active:scale-[0.98] transition",
+                                ].join(" ")}
+                            >
+                                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                                    <polyline points="16 17 21 12 16 7" />
+                                    <line x1="21" y1="12" x2="9" y2="12" />
+                                </svg>
+                                ยุติสัญญา
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* รายละเอียดสัญญา */}
@@ -712,6 +870,76 @@ export default function RoomDetailPage() {
                                     className="px-6 py-3 rounded-xl !bg-blue-600 text-white font-extrabold hover:!bg-blue-700"
                                 >
                                     บันทึก
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ===== Terminate Contract Modal ===== */}
+            {showTerminateModal && tenant && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+                    <button
+                        type="button"
+                        onClick={() => setShowTerminateModal(false)}
+                        className="absolute inset-0 bg-black/30"
+                        aria-label="close"
+                    />
+
+                    <div className="relative w-full max-w-md rounded-2xl bg-white shadow-2xl border border-rose-100 overflow-hidden">
+                        <div className="px-6 py-5 bg-rose-50 border-b border-rose-100">
+                            <div className="text-lg font-extrabold text-rose-800">⚠️ ยืนยันการยุติสัญญา</div>
+                        </div>
+
+                        <div className="p-6 space-y-4">
+                            <div className="text-sm font-bold text-gray-700">
+                                คุณต้องการยุติสัญญาของ <span className="text-gray-900 font-extrabold">{tenant.fullName}</span> ห้อง <span className="text-gray-900 font-extrabold">{tenant.room}</span> ใช่หรือไม่?
+                            </div>
+                            <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm font-bold text-amber-800">
+                                การดำเนินการนี้จะ:
+                                <ul className="list-disc pl-5 mt-2 space-y-1">
+                                    <li>ลบข้อมูลผู้เช่าออกจากห้องนี้</li>
+                                    <li>เปลี่ยนสถานะห้องเป็น "ว่าง"</li>
+                                    <li>ยกเลิกการเข้าถึงระบบของผู้เช่า</li>
+                                </ul>
+                            </div>
+
+                            <div className="flex items-center justify-end gap-3 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowTerminateModal(false)}
+                                    disabled={terminating}
+                                    className="px-5 py-3 rounded-xl bg-white border border-gray-200 text-gray-800 font-extrabold hover:bg-gray-50"
+                                >
+                                    ยกเลิก
+                                </button>
+
+                                <button
+                                    type="button"
+                                    disabled={terminating}
+                                    onClick={async () => {
+                                        if (!roomId || !tenant) return;
+                                        setTerminating(true);
+                                        try {
+                                            await terminateContract(tenant.dormUserId, roomId, resolvedCondoId);
+                                            setShowTerminateModal(false);
+                                            // reload page to reflect changes
+                                            window.location.reload();
+                                        } catch (e: any) {
+                                            alert(e?.message || "ยุติสัญญาไม่สำเร็จ");
+                                        } finally {
+                                            setTerminating(false);
+                                        }
+                                    }}
+                                    className={[
+                                        "px-6 py-3 rounded-xl font-extrabold text-sm",
+                                        "bg-rose-600 text-white hover:bg-rose-700",
+                                        "disabled:opacity-60 disabled:cursor-not-allowed",
+                                        "active:scale-[0.98] transition",
+                                    ].join(" ")}
+                                >
+                                    {terminating ? "กำลังดำเนินการ..." : "ยืนยันยุติสัญญา"}
                                 </button>
                             </div>
                         </div>

@@ -409,7 +409,7 @@ export default function RoomsPage() {
                                                     <td className="px-6 py-4 text-right">
                                                         <button
                                                             type="button"
-                                                            onClick={() => nav(`/owner/rooms/${roomId}`)}
+                                                            onClick={() => nav(`/owner/rooms/${roomId}`, { state: { condoId } })}
                                                             className="font-extrabold text-gray-700 underline underline-offset-4 hover:text-gray-900"
                                                         >
                                                             รายละเอียด
