@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useCondoWizardStore } from "../AddCondo/condoWizard.store";
 
 /* ====== types ====== */
 type CondoItem = {
@@ -567,7 +568,10 @@ export default function CondoHomePage() {
                                     <div className="mt-5 flex items-center justify-center">
                                         <button
                                             type="button"
-                                            onClick={() => nav("/owner/add-condo/step-0")}
+                                            onClick={() => {
+                                                useCondoWizardStore.getState().clear();
+                                                nav("/owner/add-condo/step-0");
+                                            }}
                                             className={[
                                                 "h-[46px] px-10 rounded-xl border-0 text-white font-extrabold text-base tracking-[0.2px]",
                                                 "shadow-[0_12px_22px_rgba(0,0,0,0.18)] transition",

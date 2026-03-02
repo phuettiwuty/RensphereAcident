@@ -117,72 +117,46 @@ function CardShell({
 export default function Step_0() {
   const nav = useNavigate();
 
+  // ✅ ดึงข้อมูล step0 จาก store (persist ใน localStorage → ไม่หายเมื่อเปลี่ยน step)
+  const step0Store = useCondoWizardStore((s) => s.step0);
+  const setStep0 = useCondoWizardStore((s) => s.setStep0);
+
   const [formData, setFormData] = useState<FormData>({
     logoFile: null,
-    nameTh: "",
-    addressTh: "",
-    nameEn: "",
-    addressEn: "",
-    phoneNumber: "",
-    taxId: "",
-    paymentDueDate: "",
-    fineAmount: "",
-    acceptFine: false,
+    nameTh: step0Store.nameTh,
+    addressTh: step0Store.addressTh,
+    nameEn: step0Store.nameEn,
+    addressEn: step0Store.addressEn,
+    phoneNumber: step0Store.phoneNumber,
+    taxId: step0Store.taxId,
+    paymentDueDate: step0Store.paymentDueDate,
+    fineAmount: step0Store.fineAmount,
+    acceptFine: step0Store.acceptFine,
   });
 
   const condoId = useCondoWizardStore((s) => s.condoId);
   const setCondoId = useCondoWizardStore((s) => s.setCondoId);
 
-  // ✅ Auto-detect: ถ้ายังไม่มี condoId แต่ user มีคอนโดอยู่ใน DB → set condoId อัตโนมัติ
+  // ✅ sync formData → store ทุกครั้งที่เปลี่ยน (ยกเว้น logoFile)
   useEffect(() => {
-    if (condoId) return; // มี condoId แล้ว ไม่ต้องทำ
-    let cancelled = false;
-    (async () => {
-      try {
-        // อ่าน token จาก localStorage โดยตรง (เพราะ Zustand auth store อาจยัง hydrate ไม่เสร็จ)
-        let token = "";
-        try {
-          const raw = localStorage.getItem("rentsphere_auth");
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            token = parsed?.state?.token || "";
-          }
-        } catch { }
-        console.log("[Step0] Auto-detect: token =", token ? "YES" : "NO");
-        if (!token) return;
+    setStep0({
+      nameTh: formData.nameTh,
+      addressTh: formData.addressTh,
+      nameEn: formData.nameEn,
+      addressEn: formData.addressEn,
+      phoneNumber: formData.phoneNumber,
+      taxId: formData.taxId,
+      paymentDueDate: formData.paymentDueDate,
+      fineAmount: formData.fineAmount,
+      acceptFine: formData.acceptFine,
+    });
+  }, [formData, setStep0]);
 
-        const res = await fetch(`${API}/api/v1/condos/mine`, {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        console.log("[Step0] Auto-detect: /condos/mine status =", res.status);
-        if (!res.ok || cancelled) return;
-        const data = await res.json();
-        console.log("[Step0] Auto-detect: response data =", data);
-        // หา condo ที่ user เป็นเจ้าของ
-        let condo: any = null;
-        if (data.condo) condo = data.condo;
-        else if (Array.isArray(data.condos) && data.condos.length > 0) condo = data.condos[0];
-
-        if (condo && condo.id && !cancelled) {
-          console.log("[Step0] Auto-detected condo:", condo.id);
-          setCondoId(condo.id);
-        } else {
-          console.log("[Step0] No condo found in response");
-        }
-      } catch (e) {
-        console.error("[Step0] auto-detect condo error:", e);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [condoId, setCondoId]);
-
-  // ✅ โหลดข้อมูลเดิมจาก DB เมื่อมี condoId (กดย้อนกลับ / refresh)
+  // ✅ โหลดข้อมูลเดิมจาก DB เมื่อมี condoId (กดย้อนกลับมาแก้ในโหมด edit)
+  // แต่ถ้า store มีข้อมูลอยู่แล้ว (nameTh ไม่ใช่ค่าว่าง) → ใช้ของ store (ไม่ overwrite)
   useEffect(() => {
     if (!condoId) return;
+    if (step0Store.nameTh) return; // มีข้อมูลใน store แล้ว ไม่ต้องโหลดจาก DB ซ้ำ
     let cancelled = false;
     (async () => {
       try {
@@ -190,8 +164,7 @@ export default function Step_0() {
         const data = await getCondoDetail();
         if (cancelled || !data.condo) return;
         const c = data.condo;
-        setFormData((prev) => ({
-          ...prev,
+        const loaded = {
           nameTh: c.name_th || "",
           addressTh: c.address_th || "",
           nameEn: c.name_en || "",
@@ -201,13 +174,14 @@ export default function Step_0() {
           paymentDueDate: c.payment_due_date ? String(c.payment_due_date) : "",
           fineAmount: c.fine_amount ? String(c.fine_amount) : "",
           acceptFine: !!c.accept_fine,
-        }));
+        };
+        setFormData((prev) => ({ ...prev, ...loaded }));
       } catch (e) {
         console.error("load condo detail error:", e);
       }
     })();
     return () => { cancelled = true; };
-  }, [condoId]);
+  }, [condoId, step0Store.nameTh]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
