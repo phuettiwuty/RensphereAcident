@@ -1,5 +1,27 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import OwnerShell from "@/features/owner/components/OwnerShell";
+
+/* ================================================================
+   API helpers
+   ================================================================ */
+const API = import.meta.env.VITE_API_URL || "https://backendlinefacality.onrender.com";
+
+function getAuthToken(): string {
+    try { const raw = localStorage.getItem("rentsphere_auth"); if (!raw) return ""; return JSON.parse(raw)?.state?.token || ""; } catch { return ""; }
+}
+function authHeaders() {
+    const t = getAuthToken();
+    return { "Content-Type": "application/json", ...(t ? { Authorization: `Bearer ${t}` } : {}) };
+}
+async function resolveCondoId(): Promise<string> {
+    const ls = localStorage.getItem("rentsphere_selected_condo"); if (ls) return ls;
+    try { const raw = localStorage.getItem("rentsphere_condo_wizard"); if (raw) { const id = JSON.parse(raw)?.state?.condoId; if (id) return id; } } catch { }
+    try { const r = await fetch(`${API}/api/v1/condos/mine`, { method: "GET", headers: authHeaders() }); if (r.ok) { const d = await r.json(); const c = d.condo || (d.condos && d.condos[0]); if (c?.id) return String(c.id); } } catch { }
+    throw new Error("ไม่พบ condoId");
+}
+function fmtDateShort(d: string): string {
+    try { return new Date(d).toLocaleDateString("th-TH", { timeZone: "Asia/Bangkok", day: "numeric", month: "short", year: "2-digit" }); } catch { return d; }
+}
 
 /* ================================================================
    Types
@@ -42,14 +64,124 @@ function statusClass(s: PaymentRecord["status"]) {
 export default function PaymentsPage() {
     const [page, setPage] = useState(1);
     const [data, setData] = useState<PaymentRecord[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [totalRooms, setTotalRooms] = useState(0);
     const PER_PAGE = 4;
 
     const AVATAR_COLORS = ["bg-purple-400", "bg-blue-400", "bg-green-400", "bg-pink-400", "bg-amber-400", "bg-teal-400", "bg-indigo-400", "bg-rose-400"];
-    const TOTAL_AMOUNT = 0;
-    const PAID_AMOUNT = 0;
-    const UNPAID_AMOUNT = 0;
-    const TOTAL_ROOMS = 0;
-    const UNPAID_ROOMS = 0;
+
+    /* ===== Load data from backend ===== */
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                setLoading(true);
+                const condoId = await resolveCondoId();
+
+                // Fetch invoices + rooms + tenants in parallel
+                const [invRes, roomRes, tenantRes, meterRes, utilRes] = await Promise.all([
+                    fetch(`${API}/api/v1/condos/${condoId}/invoices`, { headers: authHeaders() }).catch(() => null),
+                    fetch(`${API}/api/v1/condos/${condoId}/rooms`, { headers: authHeaders() }).catch(() => null),
+                    fetch(`${API}/admin/tenants?condoId=${encodeURIComponent(condoId)}`, { headers: authHeaders() }).catch(() => null),
+                    fetch(`${API}/api/v1/condos/${condoId}/meters`, { headers: authHeaders() }).catch(() => null),
+                    fetch(`${API}/api/v1/condos/${condoId}/utilities`, { headers: authHeaders() }).catch(() => null),
+                ]);
+
+                const invoices: any[] = invRes?.ok ? (await invRes.json()).invoices || [] : [];
+                const rooms: any[] = roomRes?.ok ? (await roomRes.json()).rooms || [] : [];
+                const tenants: any[] = tenantRes?.ok ? (await tenantRes.json()).items || [] : [];
+                const meters: any[] = meterRes?.ok ? (await meterRes.json()).meters || [] : [];
+                const configs: any[] = utilRes?.ok ? (await utilRes.json()).configs || [] : [];
+
+                if (cancelled) return;
+                setTotalRooms(rooms.length);
+
+                // Utility rates
+                let waterRate = 18, electricRate = 8;
+                for (const c of configs) {
+                    if (c.utility_type === "water") waterRate = Number(c.rate || 18);
+                    if (c.utility_type === "electricity") electricRate = Number(c.rate || 8);
+                }
+
+                // Tenant map: roomNo → tenantName
+                const tenantMap: Record<string, string> = {};
+                for (const t of tenants) {
+                    const roomNo = String(t.room_no || t.roomNo || t.room || "");
+                    const name = t.full_name || t.fullName || "";
+                    if (roomNo && name) tenantMap[roomNo] = name;
+                }
+
+                // Room map: roomId → roomNo/price
+                const roomMap: Record<string, { roomNo: string; price: number }> = {};
+                for (const r of rooms) roomMap[String(r.id)] = { roomNo: String(r.roomNo || r.room_no || "—"), price: Number(r.price || 0) };
+
+                // Meter costs per room
+                const meterCosts: Record<string, { water: number; electric: number }> = {};
+                for (const m of meters) {
+                    const rid = String(m.roomId || ""); if (!rid) continue;
+                    if (!meterCosts[rid]) meterCosts[rid] = { water: 0, electric: 0 };
+                    const units = Number(m.unitsUsed ?? 0);
+                    if (m.type === "water") meterCosts[rid].water = Math.max(meterCosts[rid].water, units * waterRate);
+                    else if (m.type === "electricity") meterCosts[rid].electric = Math.max(meterCosts[rid].electric, units * electricRate);
+                }
+
+                const records: PaymentRecord[] = [];
+
+                if (invoices.length > 0) {
+                    for (const inv of invoices) {
+                        const roomId = String(inv.roomId || inv.room_id || "");
+                        const room = roomMap[roomId];
+                        const rNo = room?.roomNo || inv.roomNo || "—";
+                        const tenant = tenantMap[rNo] || "—";
+                        let status: PaymentRecord["status"] = "pending";
+                        const s = String(inv.status || "").toLowerCase();
+                        if (s === "paid") status = "paid";
+                        else if (s === "overdue") status = "overdue";
+                        else if (inv.dueDate && new Date(inv.dueDate) < new Date()) status = "overdue";
+
+                        records.push({
+                            id: String(inv.id),
+                            invoiceNo: `INV-${String(inv.id).slice(-6).toUpperCase()}`,
+                            roomNo: rNo,
+                            tenantName: tenant,
+                            tenantAvatar: tenant.slice(0, 2).toUpperCase(),
+                            sentDate: inv.createdAt ? fmtDateShort(inv.createdAt) : null,
+                            amount: Number(inv.totalAmount ?? inv.total_amount ?? 0),
+                            status,
+                            autoNotify: status === "overdue",
+                        });
+                    }
+                } else {
+                    // Draft จากข้อมูล room + meter
+                    for (const r of rooms) {
+                        const rid = String(r.id);
+                        const rNo = String(r.roomNo || r.room_no || "—");
+                        const tenant = tenantMap[rNo];
+                        if (!tenant) continue;
+                        const mc = meterCosts[rid] || { water: 0, electric: 0 };
+                        const total = Number(r.price || 0) + mc.water + mc.electric;
+                        if (total <= 0) continue;
+                        records.push({
+                            id: rid, invoiceNo: `DRAFT-${rNo}`, roomNo: rNo,
+                            tenantName: tenant, tenantAvatar: tenant.slice(0, 2).toUpperCase(),
+                            sentDate: null, amount: total, status: "pending", autoNotify: false,
+                        });
+                    }
+                }
+
+                setData(records);
+            } catch (e) { console.error("PaymentsPage load error:", e); }
+            finally { if (!cancelled) setLoading(false); }
+        })();
+        return () => { cancelled = true; };
+    }, []);
+
+    /* ===== Derived stats ===== */
+    const TOTAL_AMOUNT = useMemo(() => data.reduce((s, r) => s + r.amount, 0), [data]);
+    const PAID_AMOUNT = useMemo(() => data.filter(r => r.status === "paid").reduce((s, r) => s + r.amount, 0), [data]);
+    const UNPAID_AMOUNT = useMemo(() => data.filter(r => r.status !== "paid").reduce((s, r) => s + r.amount, 0), [data]);
+    const TOTAL_ROOMS = totalRooms;
+    const UNPAID_ROOMS = useMemo(() => new Set(data.filter(r => r.status !== "paid").map(r => r.roomNo)).size, [data]);
 
     const totalPages = Math.max(1, Math.ceil(data.length / PER_PAGE));
     const pageData = data.slice((page - 1) * PER_PAGE, page * PER_PAGE);
@@ -64,6 +196,21 @@ export default function PaymentsPage() {
 
     const paidPct = TOTAL_AMOUNT > 0 ? Math.round((PAID_AMOUNT / TOTAL_AMOUNT) * 100) : 0;
 
+    // Current month/year in Thai
+    const currentMonthYear = useMemo(() => new Date().toLocaleDateString("th-TH", { timeZone: "Asia/Bangkok", month: "long", year: "numeric" }), []);
+
+    if (loading) {
+        return (
+            <OwnerShell activeKey="payments">
+                <div className="w-full mx-auto pt-6 px-8 pb-10">
+                    <div className="rounded-2xl bg-white border border-blue-100 shadow-sm px-6 py-12 text-center">
+                        <div className="text-sm font-extrabold text-gray-600">กำลังโหลดข้อมูลการชำระเงิน...</div>
+                    </div>
+                </div>
+            </OwnerShell>
+        );
+    }
+
     return (
         <OwnerShell activeKey="payments">
             <div className="w-full mx-auto animate-in fade-in duration-300 pt-6 px-8 pb-10">
@@ -72,7 +219,7 @@ export default function PaymentsPage() {
                     <div>
                         <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight">ติดตามการชำระเงิน</h1>
                         <p className="text-sm font-bold text-gray-500 mt-1 pt-1">
-                            ภาพรวมสถานะการค้างชำระของอาคาร A ประจำเดือน มกราคม 2569
+                            ภาพรวมสถานะการชำระเงินประจำเดือน {currentMonthYear}
                         </p>
                     </div>
                     <button className="h-[40px] px-5 rounded-lg bg-[#93C5FD] text-white font-extrabold text-sm shadow-[0_8px_20px_rgba(147,197,253,0.4)] hover:bg-[#7fb4fb] active:scale-[0.98] transition flex items-center gap-2">
