@@ -5,20 +5,32 @@ import InvoiceInfo from './componentsinvoice/InvoiceInfo';
 import InvoiceTable from './componentsinvoice/InvoiceTable';
 import InvoiceTotal from './componentsinvoice/InvoiceTotal';
 import PaymentPanel from './componentsinvoice/PaymentPanel';
+
 interface InvoiceDetailProps {
   item: BillingItem;
   onBack: () => void;
   onComplete: () => void;
+  condoId: string;
 }
 
-const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ item, onBack, onComplete }) => {
+const API = import.meta.env.VITE_API_URL || "https://backendlinefacality.onrender.com";
+
+function getAuthToken(): string {
+  try { const raw = localStorage.getItem("rentsphere_auth"); if (!raw) return ""; return JSON.parse(raw)?.state?.token || ""; } catch { return ""; }
+}
+function authHeaders() {
+  const t = getAuthToken();
+  return { "Content-Type": "application/json", ...(t ? { Authorization: `Bearer ${t}` } : {}) };
+}
+
+const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ item, onBack, onComplete, condoId }) => {
   const [isPaid, setIsPaid] = useState(false);
-  
+
   // Form States
   const [paymentAmount, setPaymentAmount] = useState<string>(item.estimatedTotal.toString());
   const [paymentMethod, setPaymentMethod] = useState<string>('เงินสด');
   const [typedDate, setTypedDate] = useState<string>('');
-  
+
   // Initialize date to today on mount
   useEffect(() => {
     const today = new Date();
@@ -28,16 +40,39 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ item, onBack, onComplete 
     setTypedDate(`${d}/${m}/${y}`);
   }, []);
 
-  const isFormValid = 
-    paymentAmount !== '' && 
-    parseFloat(paymentAmount) > 0 && 
-    paymentMethod !== '' && 
+  const isFormValid =
+    paymentAmount !== '' &&
+    parseFloat(paymentAmount) > 0 &&
+    paymentMethod !== '' &&
     typedDate.length >= 10;
 
-  const handlePayment = () => {
-    if (isFormValid) {
-      setIsPaid(true);
+  const handlePayment = async () => {
+    if (!isFormValid) return;
+
+    try {
+      if (item.invoiceId) {
+        // PATCH existing invoice to paid
+        await fetch(`${API}/api/v1/condos/${condoId}/invoices/${item.invoiceId}/pay`, {
+          method: "PATCH", headers: authHeaders(),
+          body: JSON.stringify({ paymentMethod, paidAmount: parseFloat(paymentAmount) }),
+        });
+      } else {
+        // POST new invoice as PAID
+        await fetch(`${API}/api/v1/condos/${condoId}/invoices`, {
+          method: "POST", headers: authHeaders(),
+          body: JSON.stringify({
+            roomId: item.id,
+            totalAmount: parseFloat(paymentAmount),
+            status: "PAID",
+            note: `ค่าเช่า ${item.rentAmount}฿ + ค่าน้ำ ${((item.waterMeter?.totalUnits || 0) * item.waterRate).toFixed(2)}฿ + ค่าไฟ ${((item.elecMeter?.totalUnits || 0) * item.electricRate).toFixed(2)}฿ (${paymentMethod})`,
+          }),
+        });
+      }
+    } catch (e) {
+      console.error("Payment API error:", e);
     }
+
+    setIsPaid(true);
   };
 
   const handleReset = () => {
@@ -49,6 +84,19 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ item, onBack, onComplete 
     const m = String(today.getMonth() + 1).padStart(2, '0');
     const y = today.getFullYear();
     setTypedDate(`${d}/${m}/${y}`);
+  };
+
+  const handleNotifyLine = async () => {
+    const invoiceId = item.invoiceId;
+    if (!invoiceId || !condoId) throw new Error("ไม่พบ invoiceId");
+
+    const res = await fetch(`${API}/api/v1/condos/${condoId}/invoices/${invoiceId}/notify`, {
+      method: "POST", headers: authHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error || "ส่ง LINE ไม่สำเร็จ");
+    }
   };
 
   return (
@@ -63,7 +111,7 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ item, onBack, onComplete 
 
       {/* Right Panel: Payment Panel Container */}
       <div className="w-full xl:w-[420px] flex-shrink-0">
-        <PaymentPanel 
+        <PaymentPanel
           isPaid={isPaid}
           paymentAmount={paymentAmount}
           setPaymentAmount={setPaymentAmount}
@@ -76,6 +124,7 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ item, onBack, onComplete 
           estimatedTotal={item.estimatedTotal}
           onComplete={onComplete}
           onReset={handleReset}
+          onNotifyLine={item.invoiceId ? handleNotifyLine : undefined}
         />
       </div>
     </div>
