@@ -23,6 +23,8 @@ function authHeaders() {
 
 async function resolveCondoId(stateCondoId?: string | null): Promise<string> {
     if (stateCondoId) return stateCondoId;
+    const lsCondoId = localStorage.getItem("rentsphere_selected_condo");
+    if (lsCondoId) return lsCondoId;
     try {
         const raw = localStorage.getItem("rentsphere_condo_wizard");
         if (raw) { const id = JSON.parse(raw)?.state?.condoId; if (id) return id; }
@@ -101,7 +103,9 @@ async function fetchRoomDetail(roomId: string, condoId: string): Promise<RoomDet
         const cRes = await fetch(`${API}/api/v1/condos/mine`, { method: "GET", headers: authHeaders() });
         if (cRes.ok) {
             const cData = await cRes.json();
-            const c = cData.condo || (cData.condos && cData.condos[0]);
+            const list: any[] = cData.condos || [];
+            if (cData.condo) list.push(cData.condo);
+            const c = list.find((x: any) => String(x.id) === condoId) || list[0];
             if (c) condoName = c.name_th || c.nameTh || c.name || condoName;
         }
     } catch { }

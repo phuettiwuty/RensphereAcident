@@ -67,11 +67,15 @@ function getAuthToken(): string {
     } catch { return ""; }
 }
 
-/** หา condoId — ลำดับ: 1) navigation state  2) wizard store  3) API /condos/mine */
+/** หา condoId — ลำดับ: 1) navigation state  2) localStorage  3) wizard store  4) API /condos/mine */
 async function resolveCondoId(stateCondoId?: string | null): Promise<string> {
     if (stateCondoId) return stateCondoId;
 
-    // fallback 1: wizard store
+    // fallback 1: localStorage (จากหน้าเลือกคอนโด)
+    const lsCondoId = localStorage.getItem("rentsphere_selected_condo");
+    if (lsCondoId) return lsCondoId;
+
+    // fallback 2: wizard store
     try {
         const raw = localStorage.getItem("rentsphere_condo_wizard");
         if (raw) {
@@ -80,7 +84,7 @@ async function resolveCondoId(stateCondoId?: string | null): Promise<string> {
         }
     } catch { }
 
-    // fallback 2: API
+    // fallback 3: API
     try {
         const res = await fetch(`${API}/api/v1/condos/mine`, { method: "GET", headers: authHeaders() });
         if (res.ok) {
@@ -119,7 +123,9 @@ async function fetchRoomDetail(roomId: string, condoId: string): Promise<RoomDet
         const cRes = await fetch(`${API}/api/v1/condos/mine`, { method: "GET", headers: authHeaders() });
         if (cRes.ok) {
             const cData = await cRes.json();
-            const c = cData.condo || (cData.condos && cData.condos[0]);
+            const list: any[] = cData.condos || [];
+            if (cData.condo) list.push(cData.condo);
+            const c = list.find((x: any) => String(x.id) === condoId) || list[0];
             if (c) condoName = c.name_th || c.nameTh || c.name || condoName;
         }
     } catch { }
