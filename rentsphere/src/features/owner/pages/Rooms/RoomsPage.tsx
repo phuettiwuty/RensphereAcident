@@ -34,9 +34,7 @@ function StatusPill({ status }: { status: "VACANT" | "OCCUPIED" | string }) {
     );
 }
 
-/* ================= types (โครงไว้ให้ backend มาเชื่อม) ================= */
-type CondoLite = { id: string; name: string };
-
+/* ================= types ================= */
 type RoomRow = {
     id: string;
     condoId: string;
@@ -77,49 +75,78 @@ function authHeaders() {
     };
 }
 
-async function fetchMyCondos(): Promise<CondoLite[]> {
-    const res = await fetch(`${API}/api/v1/condos/mine`, {
-        method: "GET",
-        headers: authHeaders(),
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
 
-    const list: any[] = [];
-    if (data.condo) list.push(data.condo);
-    if (Array.isArray(data.condos)) list.push(...data.condos);
-    if (Array.isArray(data)) list.push(...data);
-
-    return list.map((x: any) => ({
-        id: String(x.id),
-        name: String(x.name_th || x.nameTh || x.name || "—"),
-    }));
-}
 
 async function fetchRooms(condoId: string): Promise<RoomRow[]> {
+    // 1) ดึงรายการห้อง
     const res = await fetch(`${API}/api/v1/condos/${condoId}/rooms`, {
         method: "GET",
         headers: authHeaders(),
     });
-
     if (!res.ok) throw new Error("โหลดรายการห้องไม่สำเร็จ");
     const data = await res.json();
-
     const rawRooms: any[] = data.rooms || (Array.isArray(data) ? data : []);
 
-    return rawRooms.map((r: any) => ({
-        id: String(r.id),
-        condoId: String(r.condo_id || r.condoId || condoId),
-        roomNo: String(r.room_no || r.roomNo || "—"),
-        floor: r.floor ?? undefined,
-        isActive: r.is_active ?? r.isActive ?? true,
-        status: r.status || "VACANT",
-        price: r.price != null ? Number(r.price) : null,
-        tenantName: r.tenant_name ?? r.tenantName ?? null,
-        moveOutAt: r.move_out_at ?? r.moveOutAt ?? null,
-        advanceBooking: r.advance_booking ?? r.advanceBooking ?? null,
-        unpaidBills: r.unpaid_bills ?? r.unpaidBills ?? null,
-    }));
+    // 2) ดึง tenant ของคอนโดนี้ เพื่อ map ชื่อลูกค้าลงแต่ละห้อง
+    // ใช้ room_no ของคอนโดนี้เป็นตัว filter เพื่อป้องกันดึง tenant จากหออื่น
+    const validRoomNos = new Set(rawRooms.map((r: any) => String(r.room_no || r.roomNo || "").trim()).filter(Boolean));
+    let tenantMap: Record<string, string> = {}; // roomNo → tenantName
+    try {
+        const tRes = await fetch(`${API}/admin/tenants?condoId=${encodeURIComponent(condoId)}`);
+        if (tRes.ok) {
+            const tData = await tRes.json();
+            const tenants: any[] = tData.items || [];
+            for (const t of tenants) {
+                const room = String(t.room || "").trim();
+                // เอาเฉพาะ tenant ที่ room ตรงกับห้องในคอนโดนี้จริงๆ
+                if (room && validRoomNos.has(room)) {
+                    tenantMap[room] = t.full_name || t.fullName || "ผู้เช่า";
+                }
+            }
+        }
+    } catch { /* ignore */ }
+
+    // 3) ดึง contracts ของคอนโดนี้ เพื่อดูวันหมดสัญญา (move_out)
+    let contractMap: Record<string, { endDate?: string }> = {}; // roomNo → contract info
+    try {
+        const cRes = await fetch(`${API}/api/v1/condos/${condoId}/contracts`, {
+            method: "GET",
+            headers: authHeaders(),
+        });
+        if (cRes.ok) {
+            const cData = await cRes.json();
+            const contracts: any[] = cData.contracts || cData.items || (Array.isArray(cData) ? cData : []);
+            for (const c of contracts) {
+                const roomNo = String(c.room_no || c.roomNo || "").trim();
+                if (roomNo) {
+                    contractMap[roomNo] = {
+                        endDate: c.end_date || c.endDate || c.contract_end || null,
+                    };
+                }
+            }
+        }
+    } catch { /* ignore */ }
+
+    return rawRooms.map((r: any) => {
+        const roomNo = String(r.room_no || r.roomNo || "—");
+        const tenant = tenantMap[roomNo] || r.tenant_name || r.tenantName || null;
+        const contract = contractMap[roomNo];
+        const status = r.status || (tenant ? "OCCUPIED" : "VACANT");
+
+        return {
+            id: String(r.id),
+            condoId: String(r.condo_id || r.condoId || condoId),
+            roomNo,
+            floor: r.floor ?? undefined,
+            isActive: r.is_active ?? r.isActive ?? true,
+            status,
+            price: r.price != null ? Number(r.price) : null,
+            tenantName: tenant,
+            moveOutAt: contract?.endDate || r.move_out_at || r.moveOutAt || null,
+            advanceBooking: r.advance_booking ?? r.advanceBooking ?? null,
+            unpaidBills: r.unpaid_bills ?? r.unpaidBills ?? null,
+        };
+    });
 }
 
 /* ================= Page ================= */
@@ -132,12 +159,14 @@ export default function RoomsPage() {
     const state = (location.state ?? null) as LocationState;
     const condoIdFromState = state?.condoId ?? null;
 
+    const condoIdFromStorage = localStorage.getItem("rentsphere_selected_condo") || "";
+    const condoIdInitial = condoIdFromState || condoIdFromStorage;
+
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const [condoId, setCondoId] = useState<string | null>(condoIdFromState);
+    const [condoId, setCondoId] = useState<string | null>(condoIdInitial || null);
     const [condoName, setCondoName] = useState<string>("—");
-    const [condos, setCondos] = useState<CondoLite[]>([]);
 
     const [rooms, setRooms] = useState<RoomRow[]>([]);
 
@@ -145,46 +174,26 @@ export default function RoomsPage() {
     const [openPickRoom, setOpenPickRoom] = useState(false);
     const [pickRoomId, setPickRoomId] = useState<string>("");
 
-    //1) โหลดรายการคอนโดทั้งหมดของ owner
+    // โหลดชื่อคอนโด
     useEffect(() => {
-        let cancelled = false;
-
-        const loadCondos = async () => {
+        if (!condoId) return;
+        (async () => {
             try {
-                setLoading(true);
-                setError(null);
-
-                const list = await fetchMyCondos();
-                if (cancelled) return;
-
-                setCondos(list);
-
-                if (list.length === 0) {
-                    setLoading(false);
-                    setRooms([]);
-                    setCondoName("—");
-                    return;
-                }
-
-                // ถ้ามี condoId จาก state ให้ใช้ตัวนั้น, ไม่งั้นเลือกตัวแรก
-                const picked = condoIdFromState
-                    ? list.find(c => c.id === condoIdFromState) || list[0]
-                    : list[0];
-
-                setCondoId(picked.id);
-                setCondoName(picked.name);
-            } catch (e: any) {
-                if (cancelled) return;
-                setError(e?.message ?? "เกิดข้อผิดพลาด");
-                setLoading(false);
-            }
-        };
-
-        loadCondos();
-        return () => {
-            cancelled = true;
-        };
-    }, []);
+                const res = await fetch(`${API}/api/v1/condos/mine`, {
+                    method: "GET",
+                    headers: authHeaders(),
+                });
+                if (!res.ok) return;
+                const data = await res.json();
+                const list: any[] = [];
+                if (data.condo) list.push(data.condo);
+                if (Array.isArray(data.condos)) list.push(...data.condos);
+                if (Array.isArray(data)) list.push(...data);
+                const found = list.find((c: any) => String(c.id) === condoId);
+                if (found) setCondoName(String(found.name_th || found.nameTh || found.name || "—"));
+            } catch { /* ignore */ }
+        })();
+    }, [condoId]);
 
     //2)โหลด rooms จาก backend
     useEffect(() => {
@@ -196,13 +205,6 @@ export default function RoomsPage() {
             try {
                 setLoading(true);
                 setError(null);
-
-                //ถ้ายังไม่รู้ชื่อคอนโด (เช่นส่ง condoId มาเฉย ๆ)ดึงจาก list
-                if (condoName === "—") {
-                    const condos = await fetchMyCondos();
-                    const found = condos.find((c) => c.id === condoId);
-                    if (!cancelled && found) setCondoName(found.name);
-                }
 
                 const data = await fetchRooms(condoId);
                 if (cancelled) return;
@@ -247,25 +249,7 @@ export default function RoomsPage() {
                     <label className="text-sm font-bold text-gray-500 flex items-center gap-1.5">
                         <Building2 size={15} /> คอนโดมิเนียม :
                     </label>
-                    {condos.length > 1 ? (
-                        <select
-                            value={condoId || ""}
-                            onChange={(e) => {
-                                const c = condos.find(x => x.id === e.target.value);
-                                if (c) {
-                                    setCondoId(c.id);
-                                    setCondoName(c.name);
-                                }
-                            }}
-                            className="rounded-xl border-2 border-blue-200 bg-white px-3 py-1.5 text-sm font-bold text-gray-800 focus:border-indigo-400 focus:outline-none"
-                        >
-                            {condos.map(c => (
-                                <option key={c.id} value={c.id}>{c.name}</option>
-                            ))}
-                        </select>
-                    ) : (
-                        <span className="text-sm font-bold text-gray-800">{condoName}</span>
-                    )}
+                    <span className="text-sm font-bold text-gray-800">{condoName}</span>
                 </div>
 
                 <button
@@ -384,7 +368,9 @@ export default function RoomsPage() {
                                             const status = r?.status ?? "VACANT";
 
                                             const tenant = r?.tenantName ?? "-";
-                                            const moveOut = r?.moveOutAt ?? "-";
+                                            const moveOut = r?.moveOutAt
+                                                ? new Date(r.moveOutAt).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })
+                                                : "-";
                                             const booking = r?.advanceBooking ?? "-";
                                             const unpaid = r?.unpaidBills ?? "-";
 

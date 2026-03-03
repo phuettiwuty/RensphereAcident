@@ -495,7 +495,11 @@ export default function CondoHomePage() {
     }, [condos, createdCondoId]);
 
     // ไปหน้า dashboard แบบผูก condoId
-    const goDashboard = (condoId: string) => nav("/owner/dashboard", { state: { condoId } });
+    const goDashboard = (condoId: string) => {
+        // เก็บไว้ใน localStorage ให้หน้าอื่นๆ (แจ้งซ่อม, แจ้งพัสดุ, ห้อง) อ่านได้
+        localStorage.setItem("rentsphere_selected_condo", condoId);
+        nav("/owner/dashboard", { state: { condoId } });
+    };
 
     const handleDelete = async (c: CondoItem) => {
         const ok = window.confirm(`ต้องการลบคอนโด "${c.name}" จริงหรือไม่?\n(ข้อมูลห้อง/ผู้เช่าที่ผูกอยู่จะถูกลบด้วย)`);

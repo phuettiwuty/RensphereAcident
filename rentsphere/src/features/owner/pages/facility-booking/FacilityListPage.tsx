@@ -26,7 +26,6 @@ import {
 
 const API = import.meta.env.VITE_API_URL || "https://backendlinefacality.onrender.com";
 
-type CondoOption = { id: string; nameTh: string };
 
 
 
@@ -629,10 +628,9 @@ function FacilityBookingDashboard({
 export default function FacilityListPage() {
   const token = useAuthStore((s) => s.token) || "";
 
-  // ---- condo selection ----
-  const [condos, setCondos] = useState<CondoOption[]>([]);
-  const [selectedCondoId, setSelectedCondoId] = useState<string>("");
-  const [condoLoading, setCondoLoading] = useState(true);
+  // ---- condo selection (from localStorage) ----
+  const selectedCondoId = useMemo(() => localStorage.getItem("rentsphere_selected_condo") || "", []);
+  const [condoName, setCondoName] = useState<string>("—");
 
   const [items, setItems] = useState<Facility[]>([]);
   const [loading, setLoading] = useState(false);
@@ -641,28 +639,21 @@ export default function FacilityListPage() {
 
   const [selectedFacility, setSelectedFacility] = useState<Facility | null>(null);
 
-  // โหลดรายการคอนโดของ owner
+  // โหลดชื่อคอนโด
   useEffect(() => {
+    if (!selectedCondoId || !token) return;
     (async () => {
       try {
-        setCondoLoading(true);
         const r = await fetch(`${API}/api/v1/condos/mine`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await r.json().catch(() => ({}));
-        const list: CondoOption[] = (data.condos || []).map((c: any) => ({
-          id: c.id,
-          nameTh: c.nameTh || c.name_th || c.name || "—",
-        }));
-        setCondos(list);
-        if (list.length > 0) setSelectedCondoId(list[0].id);
-      } catch {
-        setErr("โหลดรายการคอนโดไม่สำเร็จ");
-      } finally {
-        setCondoLoading(false);
-      }
+        const list: any[] = data.condos || [];
+        const found = list.find((c: any) => String(c.id) === selectedCondoId);
+        if (found) setCondoName(String(found.nameTh || found.name_th || found.name || "—"));
+      } catch { /* ignore */ }
     })();
-  }, [token]);
+  }, [token, selectedCondoId]);
 
   // โหลด facilities เมื่อเลือก condo
   const refresh = async () => {
@@ -711,26 +702,12 @@ export default function FacilityListPage() {
   return (
     <OwnerShell title="พื้นที่ส่วนกลาง" activeKey="common-area-booking" showSidebar>
       <div className="rounded-3xl border border-blue-100/60 bg-gradient-to-b from-[#EAF2FF] to-white/60 p-6">
-        {/* ===== เลือกคอนโด ===== */}
+        {/* ===== ชื่อคอนโด ===== */}
         <div className="mb-6">
           <label className="text-sm font-bold text-slate-600 mb-2 flex items-center gap-2">
-            <Building2 size={16} /> เลือกคอนโด
+            <Building2 size={16} /> คอนโดมิเนียม
           </label>
-          {condoLoading ? (
-            <div className="text-sm text-slate-400 font-bold">กำลังโหลด...</div>
-          ) : condos.length === 0 ? (
-            <div className="text-sm text-rose-500 font-bold">ยังไม่มีคอนโด กรุณาสร้างคอนโดก่อน</div>
-          ) : (
-            <select
-              value={selectedCondoId}
-              onChange={(e) => setSelectedCondoId(e.target.value)}
-              className="w-full max-w-md rounded-2xl border-2 border-blue-200 bg-white px-4 py-3 text-base font-bold text-slate-900 shadow-sm focus:border-indigo-400 focus:outline-none"
-            >
-              {condos.map((c) => (
-                <option key={c.id} value={c.id}>{c.nameTh}</option>
-              ))}
-            </select>
-          )}
+          <span className="text-base font-bold text-slate-900">{condoName}</span>
         </div>
 
         <div className="flex items-center justify-between gap-3">
