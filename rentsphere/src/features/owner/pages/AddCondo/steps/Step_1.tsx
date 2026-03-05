@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { addService, getServices } from "../condoApi";
 import { useCondoWizardStore } from "../condoWizard.store";
+import "./Step_1.css";
 
 type ServiceDraft = {
   id: string;
@@ -207,11 +208,7 @@ const Step_1: React.FC = () => {
             </label>
 
             <div
-              className="overflow-hidden transition-all duration-300 ease-in-out"
-              style={{
-                maxHeight: isVariable ? "200px" : "0px",
-                opacity: isVariable ? 1 : 0,
-              }}
+              className={`overflow-hidden transition-all duration-300 ease-in-out step1-variable-panel ${isVariable ? "step1-variable-panel--open" : ""}`}
             >
               <div className="px-6 pb-5 space-y-2">
                 <div className="text-sm font-extrabold text-black-800 mb-3">

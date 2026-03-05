@@ -1,0 +1,22 @@
+.room-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.room-row__input {
+    width: 80px;
+    height: 32px;
+    border-radius: 8px;
+    border: 1px solid #E5E7EB;
+    padding: 0 8px;
+}
+
+.room-row__delete-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #999;
+    font-size: 18px;
+}

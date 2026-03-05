@@ -1,4 +1,5 @@
 import ToggleSwitch from "./ToggleSwitch";
+import "./RoomRow.css";
 
 /* ===== types ===== */
 type Room = {
@@ -17,26 +18,13 @@ type Props = {
 /* ===== component ===== */
 export default function RoomRow({ room, onToggle, onDelete, onChangeNumber }: Props) {
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-        marginBottom: 10,
-      }}
-    >
+    <div className="room-row">
       <input
         value={room.number}
         onChange={(e) => onChangeNumber(e.target.value)}
         title="เลขห้อง"
         placeholder="เลขห้อง"
-        style={{
-          width: 80,
-          height: 32,
-          borderRadius: 8,
-          border: "1px solid #E5E7EB",
-          padding: "0 8px",
-        }}
+        className="room-row__input"
       />
 
       <ToggleSwitch checked={room.isActive} onChange={onToggle} />
@@ -45,13 +33,7 @@ export default function RoomRow({ room, onToggle, onDelete, onChangeNumber }: Pr
 
       <button
         onClick={onDelete}
-        style={{
-          background: "none",
-          border: "none",
-          cursor: "pointer",
-          color: "#999",
-          fontSize: 18,
-        }}
+        className="room-row__delete-btn"
         title="ลบห้อง"
       >
         🗑
