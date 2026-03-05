@@ -1,6 +1,26 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import OwnerShell from "@/features/owner/components/OwnerShell";
+import { getSelectedCondoId } from "@/features/owner/stores/condoStore";
 
+/* ================================================================
+   API helpers
+   ================================================================ */
+const API = import.meta.env.VITE_API_URL || "https://backendlinefacality.onrender.com";
+
+function getAuthToken(): string {
+    try { const raw = localStorage.getItem("rentsphere_auth"); if (!raw) return ""; return JSON.parse(raw)?.state?.token || ""; } catch { return ""; }
+}
+function authHeaders() {
+    const t = getAuthToken();
+    return { "Content-Type": "application/json", ...(t ? { Authorization: `Bearer ${t}` } : {}) };
+}
+async function resolveCondoId(): Promise<string> {
+    const storeId = getSelectedCondoId(); if (storeId) return storeId;
+    const ls = localStorage.getItem("rentsphere_selected_condo"); if (ls) return ls;
+    try { const raw = localStorage.getItem("rentsphere_condo_wizard"); if (raw) { const id = JSON.parse(raw)?.state?.condoId; if (id) return id; } } catch { }
+    try { const r = await fetch(`${API}/api/v1/condos/mine`, { method: "GET", headers: authHeaders() }); if (r.ok) { const d = await r.json(); const c = d.condo || (d.condos && d.condos[0]); if (c?.id) return String(c.id); } } catch { }
+    throw new Error("ไม่พบ condoId");
+}
 
 /* ================================================================
    Types
@@ -25,11 +45,136 @@ interface BillingRecord {
    Main Page
    ================================================================ */
 export default function ReportsPage() {
-    const [billingData] = useState<BillingRecord[]>([]);
+    const [billingData, setBillingData] = useState<BillingRecord[]>([]);
+    const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(1);
+    const [roomCount, setRoomCount] = useState(0);
     const PER_PAGE = 6;
 
-    const SUMMARY = { totalAmount: 0, paidAmount: 0, unpaidAmount: 0, roomCount: 0 };
+    /* ===== Load data from backend ===== */
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                setLoading(true);
+                const condoId = await resolveCondoId();
+
+                const [invRes, roomRes, meterRes, utilRes] = await Promise.all([
+                    fetch(`${API}/api/v1/condos/${condoId}/invoices`, { headers: authHeaders() }).catch(() => null),
+                    fetch(`${API}/api/v1/condos/${condoId}/rooms`, { headers: authHeaders() }).catch(() => null),
+                    fetch(`${API}/api/v1/condos/${condoId}/meters`, { headers: authHeaders() }).catch(() => null),
+                    fetch(`${API}/api/v1/condos/${condoId}/utilities`, { headers: authHeaders() }).catch(() => null),
+                ]);
+
+                const invoices: any[] = invRes?.ok ? (await invRes.json()).invoices || [] : [];
+                const rooms: any[] = roomRes?.ok ? (await roomRes.json()).rooms || [] : [];
+                const meters: any[] = meterRes?.ok ? (await meterRes.json()).meters || [] : [];
+                const configs: any[] = utilRes?.ok ? (await utilRes.json()).configs || [] : [];
+
+                if (cancelled) return;
+                setRoomCount(rooms.length);
+
+                // Utility rates
+                let waterRate = 18, electricRate = 8;
+                for (const c of configs) {
+                    if (c.utility_type === "water") waterRate = Number(c.rate || 18);
+                    if (c.utility_type === "electricity") electricRate = Number(c.rate || 8);
+                }
+
+                // Room map
+                const roomMap: Record<string, { roomNo: string; price: number }> = {};
+                for (const r of rooms) roomMap[String(r.id)] = { roomNo: String(r.roomNo || r.room_no || "—"), price: Number(r.price || 0) };
+
+                // Latest meter per room
+                const meterCosts: Record<string, { water: number; waterFee: number; electric: number; electricFee: number }> = {};
+                for (const m of meters) {
+                    const rid = String(m.roomId || ""); if (!rid) continue;
+                    if (!meterCosts[rid]) meterCosts[rid] = { water: 0, waterFee: 0, electric: 0, electricFee: 0 };
+                    const units = Number(m.unitsUsed ?? 0);
+                    if (m.type === "water") {
+                        meterCosts[rid].water = Math.max(meterCosts[rid].water, units);
+                        meterCosts[rid].waterFee = Math.max(meterCosts[rid].waterFee, units * waterRate);
+                    } else if (m.type === "electricity") {
+                        meterCosts[rid].electric = Math.max(meterCosts[rid].electric, units);
+                        meterCosts[rid].electricFee = Math.max(meterCosts[rid].electricFee, units * electricRate);
+                    }
+                }
+
+                const records: BillingRecord[] = [];
+
+                if (invoices.length > 0) {
+                    // Build from invoices
+                    for (const inv of invoices) {
+                        const roomId = String(inv.roomId || inv.room_id || "");
+                        const room = roomMap[roomId];
+                        const rNo = room?.roomNo || "—";
+                        const mc = meterCosts[roomId] || { waterFee: 0, electricFee: 0 };
+                        const rentFee = room?.price || 0;
+                        const totalAmount = Number(inv.totalAmount ?? inv.total_amount ?? 0);
+                        const otherFee = Math.max(0, totalAmount - rentFee - mc.waterFee - mc.electricFee);
+
+                        let status: BillingRecord["status"] = "pending";
+                        const s = String(inv.status || "").toLowerCase();
+                        if (s === "paid") status = "paid";
+                        else if (s === "overdue") status = "overdue";
+                        else if (inv.dueDate && new Date(inv.dueDate) < new Date()) status = "overdue";
+
+                        records.push({
+                            id: String(inv.id),
+                            invoiceNo: `INV-${String(inv.id).slice(-6).toUpperCase()}`,
+                            roomNo: rNo,
+                            rentFee,
+                            waterFee: mc.waterFee,
+                            electricFee: mc.electricFee,
+                            otherFee,
+                            totalFee: totalAmount,
+                            unpaidAmount: status !== "paid" ? totalAmount : 0,
+                            status,
+                            date: inv.createdAt || inv.created_at || "",
+                        });
+                    }
+                } else {
+                    // Build from rooms + meters (draft / no invoices yet)
+                    for (const r of rooms) {
+                        const rid = String(r.id);
+                        const rNo = String(r.roomNo || r.room_no || "—");
+                        const rentFee = Number(r.price || 0);
+                        const mc = meterCosts[rid] || { waterFee: 0, electricFee: 0 };
+                        const totalFee = rentFee + mc.waterFee + mc.electricFee;
+                        if (totalFee <= 0) continue;
+
+                        records.push({
+                            id: rid,
+                            invoiceNo: `DRAFT-${rNo}`,
+                            roomNo: rNo,
+                            rentFee,
+                            waterFee: mc.waterFee,
+                            electricFee: mc.electricFee,
+                            otherFee: 0,
+                            totalFee,
+                            unpaidAmount: totalFee,
+                            status: "pending",
+                            date: new Date().toISOString(),
+                        });
+                    }
+                }
+
+                // Sort by roomNo
+                records.sort((a, b) => a.roomNo.localeCompare(b.roomNo, "th", { numeric: true }));
+                setBillingData(records);
+            } catch (e) { console.error("ReportsPage load error:", e); }
+            finally { if (!cancelled) setLoading(false); }
+        })();
+        return () => { cancelled = true; };
+    }, []);
+
+    /* ===== Derived summary ===== */
+    const SUMMARY = useMemo(() => {
+        const totalAmount = billingData.reduce((s, r) => s + r.totalFee, 0);
+        const paidAmount = billingData.filter(r => r.status === "paid").reduce((s, r) => s + r.totalFee, 0);
+        const unpaidAmount = billingData.filter(r => r.status !== "paid").reduce((s, r) => s + r.unpaidAmount, 0);
+        return { totalAmount, paidAmount, unpaidAmount, roomCount };
+    }, [billingData, roomCount]);
 
     const totalPages = Math.max(1, Math.ceil(billingData.length / PER_PAGE));
     const pageData = billingData.slice((page - 1) * PER_PAGE, page * PER_PAGE);
@@ -51,6 +196,21 @@ export default function ReportsPage() {
         );
     }, [pageData]);
 
+    // Current month/year in Thai
+    const currentMonthYear = useMemo(() => new Date().toLocaleDateString("th-TH", { timeZone: "Asia/Bangkok", month: "long", year: "numeric" }), []);
+
+    if (loading) {
+        return (
+            <OwnerShell activeKey="reports">
+                <div className="min-h-screen w-full bg-gradient-to-b from-[#EAF2FF] to-[#f8faff] p-8 pb-12">
+                    <div className="rounded-2xl bg-white border border-blue-100 shadow-sm px-6 py-12 text-center">
+                        <div className="text-sm font-extrabold text-gray-600">กำลังโหลดข้อมูลรายงาน...</div>
+                    </div>
+                </div>
+            </OwnerShell>
+        );
+    }
+
     return (
         <OwnerShell activeKey="reports">
             {/* Background wrapper with gradient to match style but keep blue theme */}
@@ -61,7 +221,7 @@ export default function ReportsPage() {
                     <div>
                         <h1 className="text-3xl font-black text-gray-900 tracking-tight">รายงานบิลรายเดือน</h1>
                         <p className="text-sm font-bold text-gray-500 mt-1">
-                            สรุปรายละเอียดค่าเช่าและค่าใช้จ่ายประจำเดือน มกราคม 2026
+                            สรุปรายละเอียดค่าเช่าและค่าใช้จ่ายประจำเดือน {currentMonthYear}
                         </p>
                     </div>
 

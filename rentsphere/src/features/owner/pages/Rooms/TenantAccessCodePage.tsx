@@ -1,6 +1,7 @@
 import OwnerShell from "@/features/owner/components/OwnerShell";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { getSelectedCondoId } from "@/features/owner/stores/condoStore";
 
 /* ===== Types ===== */
 type RoomDetail = {
@@ -25,6 +26,13 @@ function getAuthToken(): string {
 }
 
 function getCondoId(): string {
+    // 1) condoStore (centralized)
+    const storeId = getSelectedCondoId();
+    if (storeId) return storeId;
+    // 2) localStorage (จากหน้าเลือกคอนโด)
+    const lsCondoId = localStorage.getItem("rentsphere_selected_condo");
+    if (lsCondoId) return lsCondoId;
+    // 3) wizard store
     try {
         const raw = localStorage.getItem("rentsphere_condo_wizard");
         if (!raw) return "";
@@ -64,7 +72,9 @@ async function fetchRoomDetail(roomId: string): Promise<RoomDetail> {
         const cRes = await fetch(`${API}/api/v1/condos/mine`, { method: "GET", headers: authHeaders() });
         if (cRes.ok) {
             const cData = await cRes.json();
-            const c = cData.condo || (cData.condos && cData.condos[0]);
+            const list: any[] = cData.condos || [];
+            if (cData.condo) list.push(cData.condo);
+            const c = list.find((x: any) => String(x.id) === condoId) || list[0];
             if (c) condoName = c.name_th || c.nameTh || c.name || condoName;
         }
     } catch { }

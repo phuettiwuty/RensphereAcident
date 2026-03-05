@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import OwnerShell from "@/features/owner/components/OwnerShell";
+import { getSelectedCondoId } from "@/features/owner/stores/condoStore";
 import {
   LayoutList,
   Search,
@@ -32,6 +33,11 @@ type Repair = {
   image_url: string | null;
   line_user_id: string | null;
 };
+
+/** อ่าน condoId ที่เลือกจากหน้า CondoHomePage (condoStore → localStorage fallback) */
+function getCondoId(): string {
+  return getSelectedCondoId() || localStorage.getItem("rentsphere_selected_condo") || "";
+}
 
 function StatusBadge({ status }: { status: string }) {
   const base =
@@ -133,6 +139,7 @@ const ActionButton = ({
 
 export default function OwnerAdminRepairsPage() {
 
+  const condoId = useMemo(() => getCondoId(), []);
 
   const [items, setItems] = useState<Repair[]>([]);
   const [loading, setLoading] = useState(true);
@@ -163,11 +170,15 @@ export default function OwnerAdminRepairsPage() {
   );
 
   const load = async () => {
+    if (!condoId) return;
     setErr("");
     setOk("");
     setLoading(true);
     try {
-      const q = filter ? `?status=${encodeURIComponent(filter)}` : "";
+      const params = new URLSearchParams();
+      if (filter) params.set("status", filter);
+      if (condoId) params.set("condoId", condoId);
+      const q = params.toString() ? `?${params.toString()}` : "";
       const r = await fetch(`${API}/admin/repairs${q}`, { headers });
       const data = await r.json();
       if (!r.ok) throw new Error(data?.error || "โหลดรายการไม่สำเร็จ");
@@ -180,9 +191,9 @@ export default function OwnerAdminRepairsPage() {
   };
 
   useEffect(() => {
-    load();
+    if (condoId) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter]);
+  }, [filter, condoId]);
 
   const updateStatus = async (status: string) => {
     if (!selected) return;
@@ -318,6 +329,8 @@ export default function OwnerAdminRepairsPage() {
           </button>
         </div>
       </div>
+
+
 
       {/* ✅ Content card สไตล์เดียวกับ Dashboard */}
       <div className="rounded-3xl border border-blue-100/60 bg-gradient-to-b from-[#EAF2FF] to-white/60 p-6">
