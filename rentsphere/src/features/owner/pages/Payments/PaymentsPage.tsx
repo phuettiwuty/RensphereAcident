@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import OwnerShell from "@/features/owner/components/OwnerShell";
+import "./PaymentsPage.css";
 import { getSelectedCondoId } from "@/features/owner/stores/condoStore";
 
 /* ================================================================
@@ -198,6 +199,11 @@ export default function PaymentsPage() {
 
     const paidPct = TOTAL_AMOUNT > 0 ? Math.round((PAID_AMOUNT / TOTAL_AMOUNT) * 100) : 0;
 
+    const progressRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (progressRef.current) progressRef.current.style.width = `${paidPct}%`;
+    }, [paidPct]);
+
     // Current month/year in Thai
     const currentMonthYear = useMemo(() => new Date().toLocaleDateString("th-TH", { timeZone: "Asia/Bangkok", month: "long", year: "numeric" }), []);
 
@@ -263,7 +269,7 @@ export default function PaymentsPage() {
                         {/* Progress bar */}
                         <div className="mt-3 flex items-center gap-3">
                             <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
-                                <div className="h-full rounded-full bg-green-500 transition-all" style={{ width: `${paidPct}%` }} />
+                                <div ref={progressRef} className="h-full rounded-full bg-green-500 transition-all" />
                             </div>
                             <span className="text-xs font-extrabold text-green-600">{paidPct}%</span>
                         </div>
