@@ -16,6 +16,8 @@ type BankAccount = {
 export default function Step_3() {
   const nav = useNavigate();
   const condoId = useCondoWizardStore((s) => s.condoId);
+  const unlockStep = useCondoWizardStore((s) => s.unlockStep);
+  const wizardMode = useCondoWizardStore((s) => s.wizardMode);
   const form = useBankAccountForm();
 
   const isFormValid =
@@ -25,6 +27,8 @@ export default function Step_3() {
 
   const [showSaved, setShowSaved] = useState(false);
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
+  const hasRequiredData = accounts.length > 0;
+  const canGoNext = wizardMode === "edit" || hasRequiredData;
 
   // ✅ โหลดบัญชีธนาคารเดิมจาก DB
   useEffect(() => {
@@ -251,19 +255,33 @@ export default function Step_3() {
       <div className="flex items-center justify-end gap-[14px] flex-wrap pt-4">
         <button
           type="button"
+          disabled={wizardMode !== "edit"}
           onClick={() => nav("../step-2")}
-          className="h-[46px] px-6 rounded-xl bg-white border border-gray-200 text-gray-800 font-extrabold text-sm shadow-sm hover:bg-gray-50 active:scale-[0.98] transition
-                         focus:outline-none focus:ring-2 focus:ring-gray-200"
+          className={[
+            "h-[46px] px-6 rounded-xl border text-sm font-extrabold transition focus:outline-none focus:ring-2 focus:ring-gray-200",
+            wizardMode === "edit"
+              ? "bg-white border-gray-200 text-gray-800 shadow-sm hover:bg-gray-50 active:scale-[0.98]"
+              : "bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed shadow-none",
+          ].join(" ")}
         >
           ย้อนกลับ
         </button>
 
         <button
           type="button"
-          onClick={() => nav("../step-4")}
-          className="h-[46px] w-24 rounded-xl border-0 text-white font-black text-sm shadow-[0_12px_22px_rgba(0,0,0,0.18)] transition
-                         !bg-[#93C5FD] hover:!bg-[#7fb4fb] active:scale-[0.98] cursor-pointer
-                         focus:outline-none focus:ring-2 focus:ring-blue-300"
+          disabled={!canGoNext}
+          onClick={() => {
+            if (!canGoNext) return;
+            unlockStep(4);
+            nav("../step-4");
+          }}
+          className={[
+            "h-[46px] w-24 rounded-xl border-0 text-white font-black text-sm shadow-[0_12px_22px_rgba(0,0,0,0.18)] transition",
+            "focus:outline-none focus:ring-2 focus:ring-blue-300",
+            canGoNext
+              ? "!bg-[#93C5FD] hover:!bg-[#7fb4fb] active:scale-[0.98] cursor-pointer"
+              : "bg-slate-200 text-slate-500 cursor-not-allowed shadow-none",
+          ].join(" ")}
         >
           ต่อไป
         </button>

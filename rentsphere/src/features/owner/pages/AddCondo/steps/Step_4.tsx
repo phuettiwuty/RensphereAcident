@@ -1,22 +1,79 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { createFloors, getMyCondo, getRooms } from "../condoApi";
+import { createFloors, getMyCondo, getRooms, syncRoomsLayout } from "../condoApi";
 import { useCondoWizardStore } from "../condoWizard.store";
 
 export default function Step_4() {
   const nav = useNavigate();
   const condoId = useCondoWizardStore((s) => s.condoId);
+  const unlockStep = useCondoWizardStore((s) => s.unlockStep);
+  const wizardMode = useCondoWizardStore((s) => s.wizardMode);
+  const setDraftRooms = useCondoWizardStore((s) => s.setDraftRooms);
+  const draftRooms = useCondoWizardStore((s) => s.draftRooms);
 
   const [floorCount, setFloorCount] = useState<number | "">("");
   const [roomsPerFloorText, setRoomsPerFloorText] = useState<string[]>([]);
   const [roomErrors, setRoomErrors] = useState<Record<number, string>>({});
-  const [roomsExist, setRoomsExist] = useState(false);
+  const initialSnapshotRef = useRef<{ floorCount: number; roomsPerFloorText: string[] } | null>(null);
 
   const hasRoomError = Object.keys(roomErrors).length > 0;
   const canGoNext = floorCount !== "" && !hasRoomError;
 
+  const buildDraftRoomsFromPlan = (nextFloorCount: number, nextRoomsPerFloor: number[]) => {
+    const byFloor = new Map<number, typeof draftRooms>();
+    draftRooms.forEach((room) => {
+      const arr = byFloor.get(room.floor) ?? [];
+      arr.push(room);
+      byFloor.set(room.floor, arr);
+    });
+    byFloor.forEach((arr) =>
+      arr.sort((a, b) => {
+        const ai = Number(a.id.split("-")[1] ?? "0");
+        const bi = Number(b.id.split("-")[1] ?? "0");
+        if (Number.isFinite(ai) && Number.isFinite(bi) && ai !== bi) return ai - bi;
+        return a.roomNo.localeCompare(b.roomNo);
+      })
+    );
+
+    const next: typeof draftRooms = [];
+    for (let floor = 1; floor <= nextFloorCount; floor++) {
+      const existing = byFloor.get(floor) ?? [];
+      const count = nextRoomsPerFloor[floor - 1] ?? 1;
+      for (let i = 0; i < count; i++) {
+        const prev = existing[i];
+        next.push({
+          id: `${floor}-${i + 1}`,
+          condoId: prev?.condoId,
+          floor,
+          roomNo: `${floor}${String(i + 1).padStart(2, "0")}`,
+          price: prev?.price ?? null,
+          serviceId: prev?.serviceId ?? null,
+          isActive: prev?.isActive ?? true,
+          status: prev?.status ?? "VACANT",
+        });
+      }
+    }
+    return next;
+  };
+
   // ✅ โหลดข้อมูลชั้น/ห้องเดิมจาก DB
   useEffect(() => {
+    if (draftRooms.length > 0) {
+      const floorCountFromDraft = draftRooms.reduce((m, r) => Math.max(m, r.floor), 0);
+      const perFloor: string[] = [];
+      for (let f = 1; f <= floorCountFromDraft; f++) {
+        const count = draftRooms.filter((r) => r.floor === f).length;
+        perFloor.push(String(count));
+      }
+      setFloorCount(floorCountFromDraft);
+      setRoomsPerFloorText(perFloor);
+      initialSnapshotRef.current = {
+        floorCount: floorCountFromDraft,
+        roomsPerFloorText: perFloor,
+      };
+      return;
+    }
+
     if (!condoId) return;
     let cancelled = false;
     (async () => {
@@ -30,18 +87,21 @@ export default function Step_4() {
           const perFloor: string[] = [];
           for (let f = 1; f <= fc; f++) {
             const count = rooms.filter((r: any) => r.floor === f).length;
-            perFloor.push(String(count || 1));
+            perFloor.push(String(count));
           }
           setFloorCount(fc);
           setRoomsPerFloorText(perFloor);
-          setRoomsExist(true);
+          initialSnapshotRef.current = {
+            floorCount: fc,
+            roomsPerFloorText: perFloor,
+          };
         }
       } catch (e) {
         console.error("load floor/room data error:", e);
       }
     })();
     return () => { cancelled = true; };
-  }, [condoId]);
+  }, [condoId, draftRooms]);
 
   const roomsPerFloorNormalized = useMemo(() => {
     if (floorCount === "") return [];
@@ -126,19 +186,78 @@ export default function Step_4() {
 
   const handleNext = async () => {
     if (floorCount === "" || hasRoomError) return;
+    const nextFloorCount = Number(floorCount);
+    const nextRoomsPerFloor = roomsPerFloorNormalized;
 
-    // ถ้าห้องมีอยู่แล้วใน DB => ไม่ต้อง create ซ้ำ
-    if (!roomsExist) {
-      try {
-        await createFloors({
-          floorCount: Number(floorCount),
-          roomsPerFloor: roomsPerFloorNormalized,
-        });
-      } catch (e: any) {
-        console.error("create floors error:", e);
+    const initial = initialSnapshotRef.current;
+    const currentRoomsText = roomsPerFloorText.slice(0, nextFloorCount);
+    const isUnchangedInEditMode =
+      wizardMode === "edit" &&
+      !!initial &&
+      initial.floorCount === nextFloorCount &&
+      initial.roomsPerFloorText.length === currentRoomsText.length &&
+      initial.roomsPerFloorText.every((v, i) => v === currentRoomsText[i]);
+
+    if (isUnchangedInEditMode) {
+      if (draftRooms.length === 0) {
+        setDraftRooms(buildDraftRoomsFromPlan(nextFloorCount, nextRoomsPerFloor));
       }
+      unlockStep(5);
+      nav("../step-5");
+      return;
     }
 
+    const syncedDraft = buildDraftRoomsFromPlan(nextFloorCount, nextRoomsPerFloor);
+    try {
+      if (wizardMode === "edit") {
+        try {
+          const data = await syncRoomsLayout({
+            floorCount: nextFloorCount,
+            rooms: syncedDraft.map((r) => ({
+              floor: r.floor,
+              roomNo: r.roomNo,
+              price: r.price,
+              serviceId: r.serviceId,
+              isActive: r.isActive,
+              status: r.status,
+            })),
+          });
+          const apiDraft = (data.rooms || []).map((r: any) => ({
+            id: r.id,
+            condoId: condoId || undefined,
+            floor: r.floor,
+            roomNo: r.room_no || r.roomNo || "",
+            price: r.price ?? null,
+            serviceId: r.service_id ?? r.serviceId ?? null,
+            isActive: r.is_active ?? r.isActive ?? true,
+            status: r.status || "VACANT",
+          }));
+          setDraftRooms(apiDraft);
+        } catch (layoutErr) {
+          console.error("sync rooms/layout failed, fallback to createFloors:", layoutErr);
+          await createFloors({
+            floorCount: nextFloorCount,
+            roomsPerFloor: nextRoomsPerFloor,
+          });
+          setDraftRooms(syncedDraft);
+        }
+      } else {
+        await createFloors({
+          floorCount: nextFloorCount,
+          roomsPerFloor: nextRoomsPerFloor,
+        });
+        setDraftRooms(syncedDraft);
+      }
+    } catch (e: any) {
+      console.error("save floor/room layout error:", e);
+      return;
+    }
+
+    initialSnapshotRef.current = {
+      floorCount: nextFloorCount,
+      roomsPerFloorText: nextRoomsPerFloor.map((n) => String(n)),
+    };
+    unlockStep(5);
     nav("../step-5");
   };
 
@@ -247,9 +366,14 @@ export default function Step_4() {
       <div className="flex items-center justify-end gap-[14px] flex-wrap pt-4">
         <button
           type="button"
+          disabled={wizardMode !== "edit"}
           onClick={() => nav("../step-3")}
-          className="h-[46px] px-6 rounded-xl bg-white border border-gray-200 text-gray-800 font-extrabold text-sm shadow-sm hover:bg-gray-50 active:scale-[0.98] transition
-                         focus:outline-none focus:ring-2 focus:ring-gray-200"
+          className={[
+            "h-[46px] px-6 rounded-xl border text-sm font-extrabold transition focus:outline-none focus:ring-2 focus:ring-gray-200",
+            wizardMode === "edit"
+              ? "bg-white border-gray-200 text-gray-800 shadow-sm hover:bg-gray-50 active:scale-[0.98]"
+              : "bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed shadow-none",
+          ].join(" ")}
         >
           ย้อนกลับ
         </button>

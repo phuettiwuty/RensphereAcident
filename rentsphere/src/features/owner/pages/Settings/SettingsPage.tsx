@@ -5,7 +5,7 @@ export default function SettingsPage() {
     const nav = useNavigate();
 
     useEffect(() => {
-        nav("/owner/add-condo/step-0");
+        nav("/owner/add-condo/step-0?mode=edit");
     }, [nav]);
 
     return null;

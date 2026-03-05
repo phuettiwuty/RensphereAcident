@@ -270,7 +270,7 @@ export default function RoomsPage() {
 
                     <button
                         type="button"
-                        onClick={() => nav("/owner/add-condo/step-0")}
+                        onClick={() => nav("/owner/add-condo/step-0?mode=strict&fresh=1")}
                         className="mt-5 h-[46px] px-10 rounded-xl border-0 text-white font-extrabold text-sm shadow-[0_12px_22px_rgba(0,0,0,0.18)] transition
                        !bg-[#93C5FD] hover:!bg-[#7fb4fb] active:scale-[0.98]"
                     >

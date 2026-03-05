@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import CondoInfoSection from "../components/CondoInfoSection";
 import OtherDetailsSection from "../components/OtherDetailsSection";
 import PaymentSection from "../components/PaymentSection";
@@ -116,6 +116,7 @@ function CardShell({
 
 export default function Step_0() {
   const nav = useNavigate();
+  const [searchParams] = useSearchParams();
 
   // ✅ ดึงข้อมูล step0 จาก store (persist ใน localStorage → ไม่หายเมื่อเปลี่ยน step)
   const step0Store = useCondoWizardStore((s) => s.step0);
@@ -135,7 +136,47 @@ export default function Step_0() {
   });
 
   const condoId = useCondoWizardStore((s) => s.condoId);
-  const setCondoId = useCondoWizardStore((s) => s.setCondoId);
+  const maxUnlockedStep = useCondoWizardStore((s) => s.maxUnlockedStep);
+  const resetFlow = useCondoWizardStore((s) => s.resetFlow);
+  const unlockStep = useCondoWizardStore((s) => s.unlockStep);
+  const clearWizard = useCondoWizardStore((s) => s.clear);
+
+  const isEditMode = searchParams.get("mode") === "edit";
+  const isFreshStart = searchParams.get("fresh") === "1";
+
+  useEffect(() => {
+    if (isEditMode) {
+      resetFlow("edit");
+      return;
+    }
+
+    if (isFreshStart) {
+      clearWizard();
+      setFormData({
+        logoFile: null,
+        nameTh: "",
+        addressTh: "",
+        nameEn: "",
+        addressEn: "",
+        phoneNumber: "",
+        taxId: "",
+        paymentDueDate: "",
+        fineAmount: "",
+        acceptFine: false,
+      });
+      nav("/owner/add-condo/step-0", { replace: true });
+      return;
+    }
+
+    if (maxUnlockedStep > 0 && !isFreshStart) {
+      nav(`/owner/add-condo/step-${maxUnlockedStep}`, { replace: true });
+      return;
+    }
+
+    if (isFreshStart || maxUnlockedStep === 0) {
+      resetFlow("strict");
+    }
+  }, [isEditMode, isFreshStart, maxUnlockedStep, nav, resetFlow, clearWizard]);
 
   // ✅ sync formData → store ทุกครั้งที่เปลี่ยน (ยกเว้น logoFile)
   useEffect(() => {
@@ -217,6 +258,7 @@ export default function Step_0() {
   const handleSubmit = async () => {
     // ถ้ามี condoId แล้ว = กลับมาแก้ไข => ไม่ต้อง create ใหม่
     if (condoId) {
+      unlockStep(1);
       nav("/owner/add-condo/step-1");
       return;
     }
@@ -231,6 +273,7 @@ export default function Step_0() {
       const { condoId: newCondoId } = await createCondo(formData, token);
 
       useCondoWizardStore.getState().setCondoId(newCondoId);
+      unlockStep(1);
       nav("/owner/add-condo/step-1");
     } catch (e: any) {
       setSubmitError(e?.message ?? "เกิดข้อผิดพลาด");
@@ -288,17 +331,6 @@ export default function Step_0() {
       )}
 
       <div className="flex items-center justify-end gap-[14px] flex-wrap pt-4">
-        {condoId && (
-          <button
-            type="button"
-            onClick={() => nav("/owner/add-condo/step-1")}
-            className="h-[46px] w-24 rounded-xl border-0 text-white font-black text-sm shadow-[0_12px_22px_rgba(0,0,0,0.18)] transition
-             bg-[#93C5FD] hover:bg-[#7fb4fb] active:scale-[0.98] cursor-pointer
-             focus:outline-none focus:ring-2 focus:ring-blue-300"
-          >
-            ต่อไป
-          </button>
-        )}
         <button
           type="button"
           onClick={handleSubmit}
@@ -310,9 +342,10 @@ export default function Step_0() {
             "disabled:opacity-60 disabled:cursor-not-allowed disabled:shadow-none disabled:active:scale-100",
           ].join(" ")}
         >
-          {submitting ? "กำลังสร้าง..." : condoId ? "บันทึก" : "สร้าง"}
+          {submitting ? "กำลังสร้าง..." : condoId ? "ต่อไป" : "สร้าง"}
         </button>
       </div>
     </div>
   );
 }
+

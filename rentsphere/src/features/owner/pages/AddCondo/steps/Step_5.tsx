@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getRooms } from "../condoApi";
+import { getRooms, syncRoomsLayout } from "../condoApi";
 import { useCondoWizardStore } from "../condoWizard.store";
 
 type RoomStatus = "VACANT" | "OCCUPIED";
@@ -65,6 +65,10 @@ function renumberFloorRooms(allRooms: Room[], floor: number): Room[] {
 export default function Step_5() {
   const nav = useNavigate();
   const condoId = useCondoWizardStore((s) => s.condoId);
+  const unlockStep = useCondoWizardStore((s) => s.unlockStep);
+  const wizardMode = useCondoWizardStore((s) => s.wizardMode);
+  const draftRooms = useCondoWizardStore((s) => s.draftRooms);
+  const setDraftRooms = useCondoWizardStore((s) => s.setDraftRooms);
 
   // ======================
   // Local state
@@ -78,6 +82,22 @@ export default function Step_5() {
   // - setFloorCount, setRooms
   // ======================
   useEffect(() => {
+    if (draftRooms.length > 0) {
+      const mapped = draftRooms.map((r) => ({
+        id: r.id,
+        floor: r.floor,
+        roomNo: r.roomNo,
+        price: r.price,
+        serviceId: r.serviceId,
+        isActive: r.isActive,
+        status: r.status,
+      }));
+      const maxFloor = mapped.reduce((m, r) => Math.max(m, r.floor), 0);
+      setFloorCount(maxFloor);
+      setRooms(mapped);
+      return;
+    }
+
     if (!condoId) return;
     let cancelled = false;
     async function load() {
@@ -96,13 +116,24 @@ export default function Step_5() {
         const maxFloor = apiRooms.reduce((m, r) => Math.max(m, r.floor), 0);
         setFloorCount(maxFloor);
         setRooms(apiRooms);
+        setDraftRooms(
+          apiRooms.map((r) => ({
+            id: r.id,
+            floor: r.floor,
+            roomNo: r.roomNo,
+            price: r.price,
+            serviceId: r.serviceId,
+            isActive: r.isActive,
+            status: r.status,
+          }))
+        );
       } catch (e) {
         console.error("load rooms error:", e);
       }
     }
     load();
     return () => { cancelled = true; };
-  }, [condoId]);
+  }, [condoId, draftRooms, setDraftRooms]);
 
   // Group rooms by floor (เหมือน Step6)
   const roomsByFloor = useMemo(() => {
@@ -119,16 +150,42 @@ export default function Step_5() {
   // Actions (API)
   // ======================
   const toggleRoomActive = (roomId: string) => {
-    setRooms((prev) =>
-      prev.map((r) => (r.id === roomId ? { ...r, isActive: !r.isActive } : r))
-    );
+    setRooms((prev) => {
+      const next = prev.map((r) => (r.id === roomId ? { ...r, isActive: !r.isActive } : r));
+      setDraftRooms(
+        next.map((r) => ({
+          id: r.id,
+          floor: r.floor,
+          roomNo: r.roomNo,
+          price: r.price,
+          serviceId: r.serviceId,
+          isActive: r.isActive,
+          status: r.status,
+        }))
+      );
+      return next;
+    });
 
     // TODO: API
     // await api.toggleRoomActive({ roomId })
   };
 
   const changeRoomNo = (roomId: string, value: string) => {
-    setRooms((prev) => prev.map((r) => (r.id === roomId ? { ...r, roomNo: value } : r)));
+    setRooms((prev) => {
+      const next = prev.map((r) => (r.id === roomId ? { ...r, roomNo: value } : r));
+      setDraftRooms(
+        next.map((r) => ({
+          id: r.id,
+          floor: r.floor,
+          roomNo: r.roomNo,
+          price: r.price,
+          serviceId: r.serviceId,
+          isActive: r.isActive,
+          status: r.status,
+        }))
+      );
+      return next;
+    });
 
     // TODO: API
     // await api.updateRoom({ roomId, roomNo: value })
@@ -150,7 +207,19 @@ export default function Step_5() {
         status: "VACANT",
       };
 
-      return [...prev, newRoom].sort(sortByFloorAndIndex);
+      const next = [...prev, newRoom].sort(sortByFloorAndIndex);
+      setDraftRooms(
+        next.map((r) => ({
+          id: r.id,
+          floor: r.floor,
+          roomNo: r.roomNo,
+          price: r.price,
+          serviceId: r.serviceId,
+          isActive: r.isActive,
+          status: r.status,
+        }))
+      );
+      return next;
     });
 
     // TODO: API
@@ -160,11 +229,70 @@ export default function Step_5() {
   const deleteRoomOnFloor = (floor: number, roomId: string) => {
     setRooms((prev) => {
       const filtered = prev.filter((r) => r.id !== roomId);
-      return renumberFloorRooms(filtered, floor);
+      const next = renumberFloorRooms(filtered, floor);
+      setDraftRooms(
+        next.map((r) => ({
+          id: r.id,
+          floor: r.floor,
+          roomNo: r.roomNo,
+          price: r.price,
+          serviceId: r.serviceId,
+          isActive: r.isActive,
+          status: r.status,
+        }))
+      );
+      return next;
     });
 
     // TODO: API
     // await api.deleteRoom({ roomId })
+  };
+
+  const handleNext = async () => {
+    try {
+      const payload = {
+        floorCount,
+        rooms: rooms.map((r) => ({
+          floor: r.floor,
+          roomNo: r.roomNo,
+          price: r.price,
+          serviceId: r.serviceId,
+          isActive: r.isActive,
+          status: r.status,
+        })),
+      };
+      const data = await syncRoomsLayout(payload);
+      const syncedRooms: Room[] = (data.rooms || []).map((r: any) => ({
+        id: r.id,
+        floor: r.floor,
+        roomNo: r.room_no || r.roomNo || "",
+        price: r.price ?? null,
+        serviceId: r.service_id ?? r.serviceId ?? null,
+        isActive: r.is_active ?? r.isActive ?? true,
+        status: r.status || "VACANT",
+      }));
+
+      if (syncedRooms.length > 0) {
+        setRooms(syncedRooms);
+        setFloorCount(syncedRooms.reduce((m, r) => Math.max(m, r.floor), 0));
+        setDraftRooms(
+          syncedRooms.map((r) => ({
+            id: r.id,
+            floor: r.floor,
+            roomNo: r.roomNo,
+            price: r.price,
+            serviceId: r.serviceId,
+            isActive: r.isActive,
+            status: r.status,
+          }))
+        );
+      }
+    } catch (e) {
+      console.error("sync rooms layout error:", e);
+    }
+
+    unlockStep(6);
+    nav("../step-6");
   };
 
   return (
@@ -300,16 +428,21 @@ export default function Step_5() {
 
         <button
           type="button"
+          disabled={wizardMode !== "edit"}
           onClick={() => nav("../step-4")}
-          className="h-[46px] px-6 rounded-xl bg-white border border-gray-200 text-gray-800 font-extrabold text-sm shadow-sm hover:bg-gray-50 active:scale-[0.98] transition
-                     focus:outline-none focus:ring-2 focus:ring-gray-200"
+          className={[
+            "h-[46px] px-6 rounded-xl border text-sm font-extrabold transition focus:outline-none focus:ring-2 focus:ring-gray-200",
+            wizardMode === "edit"
+              ? "bg-white border-gray-200 text-gray-800 shadow-sm hover:bg-gray-50 active:scale-[0.98]"
+              : "bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed shadow-none",
+          ].join(" ")}
         >
           ย้อนกลับ
         </button>
 
         <button
           type="button"
-          onClick={() => nav("../step-6")}
+          onClick={handleNext}
           className="h-[46px] w-24 rounded-xl border-0 text-white font-black text-sm shadow-[0_12px_22px_rgba(0,0,0,0.18)] transition
                      bg-[#93C5FD] hover:bg-[#7fb4fb] active:scale-[0.98] cursor-pointer
                      focus:outline-none focus:ring-2 focus:ring-blue-300"

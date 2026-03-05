@@ -9,6 +9,9 @@ type ServiceOption = { id: string | number; label: string; price: number };
 export default function Step8_RoomService() {
     const nav = useNavigate();
     const condoId = useCondoWizardStore((s) => s.condoId);
+    const unlockStep = useCondoWizardStore((s) => s.unlockStep);
+    const draftRooms = useCondoWizardStore((s) => s.draftRooms);
+    const setDraftRooms = useCondoWizardStore((s) => s.setDraftRooms);
 
     // ======================
     // Local state (no store)
@@ -30,6 +33,32 @@ export default function Step8_RoomService() {
         let cancelled = false;
         async function load() {
             try {
+                if (draftRooms.length > 0) {
+                    const mapped = draftRooms.map((r) => ({
+                        id: r.id,
+                        condoId: r.condoId || "",
+                        floor: r.floor,
+                        roomNo: r.roomNo,
+                        price: r.price,
+                        serviceId: r.serviceId,
+                        isActive: r.isActive,
+                        status: r.status,
+                    }));
+                    const maxFloor = mapped.reduce((m, r) => Math.max(m, r.floor), 0);
+                    setFloorCount(maxFloor);
+                    setRooms(mapped);
+
+                    const serviceData = await getServices();
+                    if (cancelled) return;
+                    const opts: ServiceOption[] = (serviceData.services || []).map((s: any) => ({
+                        id: s.id,
+                        label: s.name || "",
+                        price: Number(s.price || 0),
+                    }));
+                    setServiceOptions(opts);
+                    return;
+                }
+
                 const [roomData, serviceData] = await Promise.all([getRooms(), getServices()]);
                 if (cancelled) return;
                 const apiRooms: Room[] = (roomData.rooms || []).map((r: any) => ({
@@ -45,6 +74,18 @@ export default function Step8_RoomService() {
                 const maxFloor = apiRooms.reduce((m, r) => Math.max(m, r.floor), 0);
                 setFloorCount(maxFloor);
                 setRooms(apiRooms);
+                setDraftRooms(
+                    apiRooms.map((r) => ({
+                        id: r.id,
+                        condoId: r.condoId,
+                        floor: r.floor,
+                        roomNo: r.roomNo,
+                        price: r.price,
+                        serviceId: r.serviceId,
+                        isActive: r.isActive,
+                        status: r.status,
+                    }))
+                );
 
                 // ✅ โหลดรายการบริการจาก DB
                 const opts: ServiceOption[] = (serviceData.services || []).map((s: any) => ({
@@ -59,7 +100,7 @@ export default function Step8_RoomService() {
         }
         load();
         return () => { cancelled = true; };
-    }, [condoId]);
+    }, [condoId, draftRooms, setDraftRooms]);
 
     // ======================
     // Selection
@@ -117,7 +158,22 @@ export default function Step8_RoomService() {
     // ======================
     const setServiceForRooms = async (roomIds: string[], svcId: number | null) => {
         const ids = new Set(roomIds);
-        setRooms((prev) => prev.map((r) => (ids.has(r.id) ? { ...r, serviceId: svcId } : r)));
+        setRooms((prev) => {
+            const next = prev.map((r) => (ids.has(r.id) ? { ...r, serviceId: svcId } : r));
+            setDraftRooms(
+                next.map((r) => ({
+                    id: r.id,
+                    condoId: r.condoId,
+                    floor: r.floor,
+                    roomNo: r.roomNo,
+                    price: r.price,
+                    serviceId: r.serviceId,
+                    isActive: r.isActive,
+                    status: r.status,
+                }))
+            );
+            return next;
+        });
 
         try {
             await setRoomServices(roomIds.map((id) => ({ roomId: id, serviceId: svcId ? String(svcId) : null })));
@@ -289,7 +345,10 @@ export default function Step8_RoomService() {
 
                 <button
                     type="button"
-                    onClick={() => nav("../step-9")}
+                    onClick={() => {
+                        unlockStep(9);
+                        nav("../step-9");
+                    }}
                     className="h-[46px] w-24 rounded-xl border-0 text-white font-black text-sm shadow-[0_12px_22px_rgba(0,0,0,0.18)] transition
                    bg-[#93C5FD] hover:bg-[#7fb4fb] active:scale-[0.98] cursor-pointer
                    focus:outline-none focus:ring-2 focus:ring-blue-300"

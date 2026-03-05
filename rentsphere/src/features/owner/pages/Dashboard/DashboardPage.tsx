@@ -178,6 +178,7 @@ function Bars1Series({ labels, v, unit = "฿" }: { labels: string[]; v: number[
 type DashboardSummary = {
     condoId: string;
     condoName: string;
+    floorCount: number;
 
     roomsTotal: number;
     roomsActive: number;
@@ -261,6 +262,7 @@ async function fetchDashboard(condoId: string): Promise<DashboardResponse> {
     const condoName = condo?.name || "—";
 
     const roomsTotal = rooms.length;
+    const floorCount = rooms.reduce((maxFloor, r: any) => Math.max(maxFloor, Number(r.floor || 0)), 0);
     const roomsActive = rooms.filter((r: any) => r.is_active !== false && r.isActive !== false).length;
     const occupiedRooms = rooms.filter((r: any) => r.status === "OCCUPIED").length;
     const vacantRooms = rooms.filter((r: any) => r.status === "VACANT" || !r.status).length;
@@ -274,6 +276,7 @@ async function fetchDashboard(condoId: string): Promise<DashboardResponse> {
         summary: {
             condoId,
             condoName,
+            floorCount,
             roomsTotal,
             roomsActive,
             occupiedRooms,
@@ -530,3 +533,4 @@ export default function DashboardPage() {
         </OwnerShell>
     );
 }
+

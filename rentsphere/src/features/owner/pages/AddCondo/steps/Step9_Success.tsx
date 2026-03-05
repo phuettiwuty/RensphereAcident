@@ -15,7 +15,9 @@ export default function Step9_Success() {
 
     const editPath = useMemo(() => {
         // ถ้าจะให้แก้ไขทั้ง flow อาจทำเป็น /owner/condo/:id/edit หรือใช้ flow เดิมแบบ query
-        return condoId ? `/owner/add-condo/step-0?condoId=${condoId}` : "/owner/add-condo/step-0";
+        return condoId
+            ? `/owner/add-condo/step-0?mode=edit&condoId=${condoId}`
+            : "/owner/add-condo/step-0?mode=edit";
     }, [condoId]);
 
     return (
