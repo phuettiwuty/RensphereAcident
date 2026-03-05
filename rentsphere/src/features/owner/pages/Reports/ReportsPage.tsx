@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import OwnerShell from "@/features/owner/components/OwnerShell";
+import { getSelectedCondoId } from "@/features/owner/stores/condoStore";
 
 /* ================================================================
    API helpers
@@ -14,6 +15,7 @@ function authHeaders() {
     return { "Content-Type": "application/json", ...(t ? { Authorization: `Bearer ${t}` } : {}) };
 }
 async function resolveCondoId(): Promise<string> {
+    const storeId = getSelectedCondoId(); if (storeId) return storeId;
     const ls = localStorage.getItem("rentsphere_selected_condo"); if (ls) return ls;
     try { const raw = localStorage.getItem("rentsphere_condo_wizard"); if (raw) { const id = JSON.parse(raw)?.state?.condoId; if (id) return id; } } catch { }
     try { const r = await fetch(`${API}/api/v1/condos/mine`, { method: "GET", headers: authHeaders() }); if (r.ok) { const d = await r.json(); const c = d.condo || (d.condos && d.condos[0]); if (c?.id) return String(c.id); } } catch { }

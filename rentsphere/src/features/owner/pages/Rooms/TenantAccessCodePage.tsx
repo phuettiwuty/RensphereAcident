@@ -1,6 +1,7 @@
 import OwnerShell from "@/features/owner/components/OwnerShell";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { getSelectedCondoId } from "@/features/owner/stores/condoStore";
 
 /* ===== Types ===== */
 type RoomDetail = {
@@ -25,10 +26,13 @@ function getAuthToken(): string {
 }
 
 function getCondoId(): string {
-    // 1) localStorage (จากหน้าเลือกคอนโด)
+    // 1) condoStore (centralized)
+    const storeId = getSelectedCondoId();
+    if (storeId) return storeId;
+    // 2) localStorage (จากหน้าเลือกคอนโด)
     const lsCondoId = localStorage.getItem("rentsphere_selected_condo");
     if (lsCondoId) return lsCondoId;
-    // 2) wizard store
+    // 3) wizard store
     try {
         const raw = localStorage.getItem("rentsphere_condo_wizard");
         if (!raw) return "";

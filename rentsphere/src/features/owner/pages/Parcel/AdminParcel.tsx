@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import OwnerShell from "@/features/owner/components/OwnerShell";
+import { getSelectedCondoId } from "@/features/owner/stores/condoStore";
 
 
 const API = "https://backendlinefacality.onrender.com";
@@ -24,9 +25,9 @@ type ParcelRecord = {
 
 type TabType = "send" | "history";
 
-/** อ่าน condoId ที่เลือกจากหน้า CondoHomePage (localStorage) */
-function getSelectedCondoId(): string {
-  return localStorage.getItem("rentsphere_selected_condo") || "";
+/** อ่าน condoId ที่เลือกจากหน้า CondoHomePage (condoStore → localStorage fallback) */
+function getCondoId(): string {
+  return getSelectedCondoId() || localStorage.getItem("rentsphere_selected_condo") || "";
 }
 
 function getAuthToken(): string {
@@ -49,7 +50,7 @@ function authHeaders() {
 export default function AdminParcel() {
 
   // ===== Condo selector =====
-  const condoId = useMemo(() => getSelectedCondoId(), []);
+  const condoId = useMemo(() => getCondoId(), []);
 
   const [activeTab, setActiveTab] = useState<TabType>("send");
 

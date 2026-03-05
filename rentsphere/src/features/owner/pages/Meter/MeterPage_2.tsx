@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import OwnerShell from "@/features/owner/components/OwnerShell";
 import waterIcon from "@/assets/brand/Container copy.png";
 import electricIcon from "@/assets/brand/Container (1).png";
+import { getSelectedCondoId } from "@/features/owner/stores/condoStore";
 
 /* ================================================================
    API helpers  (ตรงกับ backend index.js)
@@ -26,6 +27,7 @@ function authHeaders() {
 }
 
 async function resolveCondoId(): Promise<string> {
+    const storeId = getSelectedCondoId(); if (storeId) return storeId;
     const lsCondoId = localStorage.getItem("rentsphere_selected_condo");
     if (lsCondoId) return lsCondoId;
     try {

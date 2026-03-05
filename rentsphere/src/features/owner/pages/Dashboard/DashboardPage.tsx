@@ -1,6 +1,7 @@
 import OwnerShell from "@/features/owner/components/OwnerShell";
 import React, { useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+import { useCondoStore } from "@/features/owner/stores/condoStore";
 
 type Stat = { label: string; value: number | string };
 type LegendItem = { label: string; dotClass: string };
@@ -287,15 +288,13 @@ type LocationState = { condoId?: string } | null;
 
 export default function DashboardPage() {
     const nav = useNavigate();
-    const location = useLocation();
 
-    const state = (location.state ?? null) as LocationState;
-    const condoIdFromState = state?.condoId;
+    const storeCondoId = useCondoStore((s) => s.condoId);
 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const [condoId, setCondoId] = useState<string | null>(condoIdFromState ?? null);
+    const [condoId, setCondoId] = useState<string | null>(storeCondoId);
     const [data, setData] = useState<DashboardResponse | null>(null);
 
     // 1)ถ้าไม่มี condoId ที่ส่งมา ไปเอาคอนโดแรกของ user เป็นdefault

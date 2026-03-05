@@ -1,6 +1,7 @@
 import OwnerShell from "@/features/owner/components/OwnerShell";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
+import { getSelectedCondoId } from "@/features/owner/stores/condoStore";
 
 function moneyTHB(n?: number | null) {
     if (n == null || Number.isNaN(n)) return "0.00";
@@ -67,8 +68,9 @@ function getAuthToken(): string {
     } catch { return ""; }
 }
 
-/** หา condoId — ลำดับ: 1) navigation state  2) localStorage  3) wizard store  4) API /condos/mine */
+/** หา condoId — ลำดับ: 1) condoStore  2) navigation state  3) localStorage  4) wizard store  5) API /condos/mine */
 async function resolveCondoId(stateCondoId?: string | null): Promise<string> {
+    const storeId = getSelectedCondoId(); if (storeId) return storeId;
     if (stateCondoId) return stateCondoId;
 
     // fallback 1: localStorage (จากหน้าเลือกคอนโด)

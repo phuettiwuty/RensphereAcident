@@ -6,6 +6,7 @@ import { facilityService } from "./types/facility.service";
 import type { Facility } from "./types/facility";
 import CreateFacilityModal, { type CreateFacilityPayload } from "./CreateFacilityModal";
 import { useAuthStore } from "@/features/auth/auth.store";
+import { useCondoStore } from "@/features/owner/stores/condoStore";
 
 import {
   Calendar,
@@ -628,9 +629,9 @@ function FacilityBookingDashboard({
 export default function FacilityListPage() {
   const token = useAuthStore((s) => s.token) || "";
 
-  // ---- condo selection (from localStorage) ----
-  const selectedCondoId = useMemo(() => localStorage.getItem("rentsphere_selected_condo") || "", []);
-  const [condoName, setCondoName] = useState<string>("—");
+  // ---- condo selection (from condoStore) ----
+  const selectedCondoId = useCondoStore((s) => s.condoId) || "";
+  const condoName = useCondoStore((s) => s.condoName) || "—";
 
   const [items, setItems] = useState<Facility[]>([]);
   const [loading, setLoading] = useState(false);
@@ -638,22 +639,6 @@ export default function FacilityListPage() {
   const [open, setOpen] = useState(false);
 
   const [selectedFacility, setSelectedFacility] = useState<Facility | null>(null);
-
-  // โหลดชื่อคอนโด
-  useEffect(() => {
-    if (!selectedCondoId || !token) return;
-    (async () => {
-      try {
-        const r = await fetch(`${API}/api/v1/condos/mine`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await r.json().catch(() => ({}));
-        const list: any[] = data.condos || [];
-        const found = list.find((c: any) => String(c.id) === selectedCondoId);
-        if (found) setCondoName(String(found.nameTh || found.name_th || found.name || "—"));
-      } catch { /* ignore */ }
-    })();
-  }, [token, selectedCondoId]);
 
   // โหลด facilities เมื่อเลือก condo
   const refresh = async () => {

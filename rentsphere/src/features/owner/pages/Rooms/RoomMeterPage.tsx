@@ -1,6 +1,7 @@
 import OwnerShell from "@/features/owner/components/OwnerShell";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { getSelectedCondoId } from "@/features/owner/stores/condoStore";
 
 /* ===== helpers ===== */
 const API = import.meta.env.VITE_API_URL || "https://backendlinefacality.onrender.com";
@@ -22,6 +23,7 @@ function authHeaders() {
 }
 
 async function resolveCondoId(stateCondoId?: string | null): Promise<string> {
+    const storeId = getSelectedCondoId(); if (storeId) return storeId;
     if (stateCondoId) return stateCondoId;
     const lsCondoId = localStorage.getItem("rentsphere_selected_condo");
     if (lsCondoId) return lsCondoId;

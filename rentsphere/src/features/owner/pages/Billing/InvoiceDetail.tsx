@@ -25,6 +25,7 @@ function authHeaders() {
 
 const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ item, onBack, onComplete, condoId }) => {
   const [isPaid, setIsPaid] = useState(false);
+  const [createdInvoiceId, setCreatedInvoiceId] = useState<string | undefined>(item.invoiceId);
 
   // Form States
   const [paymentAmount, setPaymentAmount] = useState<string>(item.estimatedTotal.toString());
@@ -50,15 +51,16 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ item, onBack, onComplete,
     if (!isFormValid) return;
 
     try {
-      if (item.invoiceId) {
-        // PATCH existing invoice to paid
+      if (item.invoiceId && !item.isPaid) {
+        // PATCH existing unpaid invoice to paid
         await fetch(`${API}/api/v1/condos/${condoId}/invoices/${item.invoiceId}/pay`, {
           method: "PATCH", headers: authHeaders(),
           body: JSON.stringify({ paymentMethod, paidAmount: parseFloat(paymentAmount) }),
         });
+        setCreatedInvoiceId(item.invoiceId);
       } else {
         // POST new invoice as PAID
-        await fetch(`${API}/api/v1/condos/${condoId}/invoices`, {
+        const res = await fetch(`${API}/api/v1/condos/${condoId}/invoices`, {
           method: "POST", headers: authHeaders(),
           body: JSON.stringify({
             roomId: item.id,
@@ -67,6 +69,11 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ item, onBack, onComplete,
             note: `ค่าเช่า ${item.rentAmount}฿ + ค่าน้ำ ${((item.waterMeter?.totalUnits || 0) * item.waterRate).toFixed(2)}฿ + ค่าไฟ ${((item.elecMeter?.totalUnits || 0) * item.electricRate).toFixed(2)}฿ (${paymentMethod})`,
           }),
         });
+        if (res.ok) {
+          const d = await res.json();
+          const newId = d.invoice?.id ? String(d.invoice.id) : undefined;
+          if (newId) setCreatedInvoiceId(newId);
+        }
       }
     } catch (e) {
       console.error("Payment API error:", e);
@@ -77,6 +84,7 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ item, onBack, onComplete,
 
   const handleReset = () => {
     setIsPaid(false);
+    setCreatedInvoiceId(item.invoiceId);
     setPaymentAmount(item.estimatedTotal.toString());
     setPaymentMethod('เงินสด');
     const today = new Date();
@@ -87,8 +95,8 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ item, onBack, onComplete,
   };
 
   const handleNotifyLine = async () => {
-    const invoiceId = item.invoiceId;
-    if (!invoiceId || !condoId) throw new Error("ไม่พบ invoiceId");
+    const invoiceId = createdInvoiceId;
+    if (!invoiceId || !condoId) throw new Error("ไม่พบ invoiceId — กรุณากดบันทึกก่อนส่ง LINE");
 
     const res = await fetch(`${API}/api/v1/condos/${condoId}/invoices/${invoiceId}/notify`, {
       method: "POST", headers: authHeaders(),
@@ -124,7 +132,7 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ item, onBack, onComplete,
           estimatedTotal={item.estimatedTotal}
           onComplete={onComplete}
           onReset={handleReset}
-          onNotifyLine={item.invoiceId ? handleNotifyLine : undefined}
+          onNotifyLine={handleNotifyLine}
         />
       </div>
     </div>

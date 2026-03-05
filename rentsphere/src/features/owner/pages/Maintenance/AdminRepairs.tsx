@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import OwnerShell from "@/features/owner/components/OwnerShell";
+import { getSelectedCondoId } from "@/features/owner/stores/condoStore";
 import {
   LayoutList,
   Search,
@@ -33,9 +34,9 @@ type Repair = {
   line_user_id: string | null;
 };
 
-/** อ่าน condoId ที่เลือกจากหน้า CondoHomePage (localStorage) */
-function getSelectedCondoId(): string {
-  return localStorage.getItem("rentsphere_selected_condo") || "";
+/** อ่าน condoId ที่เลือกจากหน้า CondoHomePage (condoStore → localStorage fallback) */
+function getCondoId(): string {
+  return getSelectedCondoId() || localStorage.getItem("rentsphere_selected_condo") || "";
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -138,7 +139,7 @@ const ActionButton = ({
 
 export default function OwnerAdminRepairsPage() {
 
-  const condoId = useMemo(() => getSelectedCondoId(), []);
+  const condoId = useMemo(() => getCondoId(), []);
 
   const [items, setItems] = useState<Repair[]>([]);
   const [loading, setLoading] = useState(true);

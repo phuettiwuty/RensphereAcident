@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useCondoWizardStore } from "../AddCondo/condoWizard.store";
+import { useCondoStore } from "@/features/owner/stores/condoStore";
 
 /* ====== types ====== */
 type CondoItem = {
@@ -495,10 +496,13 @@ export default function CondoHomePage() {
     }, [condos, createdCondoId]);
 
     // ไปหน้า dashboard แบบผูก condoId
+    const selectCondo = useCondoStore((s) => s.selectCondo);
     const goDashboard = (condoId: string) => {
-        // เก็บไว้ใน localStorage ให้หน้าอื่นๆ (แจ้งซ่อม, แจ้งพัสดุ, ห้อง) อ่านได้
+        const condo = condos.find((c) => c.id === condoId);
+        selectCondo(condoId, condo?.name ?? "—");
+        // backward compat: เก็บ localStorage เดิมไว้ด้วย
         localStorage.setItem("rentsphere_selected_condo", condoId);
-        nav("/owner/dashboard", { state: { condoId } });
+        nav("/owner/dashboard");
     };
 
     const handleDelete = async (c: CondoItem) => {

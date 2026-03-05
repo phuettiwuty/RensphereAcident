@@ -1,7 +1,8 @@
 import OwnerShell from "@/features/owner/components/OwnerShell";
 import { useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Building2 } from "lucide-react";
+import { useCondoStore } from "@/features/owner/stores/condoStore";
 
 /* ================= helpers ================= */
 function getRoomLabel(room: any) {
@@ -154,46 +155,22 @@ type LocationState = { condoId?: string } | null;
 
 export default function RoomsPage() {
     const nav = useNavigate();
-    const location = useLocation();
 
-    const state = (location.state ?? null) as LocationState;
-    const condoIdFromState = state?.condoId ?? null;
-
-    const condoIdFromStorage = localStorage.getItem("rentsphere_selected_condo") || "";
-    const condoIdInitial = condoIdFromState || condoIdFromStorage;
+    const storeCondoId = useCondoStore((s) => s.condoId);
+    const storeCondoName = useCondoStore((s) => s.condoName);
 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const [condoId, setCondoId] = useState<string | null>(condoIdInitial || null);
-    const [condoName, setCondoName] = useState<string>("—");
+    const [condoId] = useState<string | null>(storeCondoId);
+    const condoName = storeCondoName ?? "—";
 
     const [rooms, setRooms] = useState<RoomRow[]>([]);
 
     // modal เลือกห้อง
     const [openPickRoom, setOpenPickRoom] = useState(false);
     const [pickRoomId, setPickRoomId] = useState<string>("");
-
-    // โหลดชื่อคอนโด
-    useEffect(() => {
-        if (!condoId) return;
-        (async () => {
-            try {
-                const res = await fetch(`${API}/api/v1/condos/mine`, {
-                    method: "GET",
-                    headers: authHeaders(),
-                });
-                if (!res.ok) return;
-                const data = await res.json();
-                const list: any[] = [];
-                if (data.condo) list.push(data.condo);
-                if (Array.isArray(data.condos)) list.push(...data.condos);
-                if (Array.isArray(data)) list.push(...data);
-                const found = list.find((c: any) => String(c.id) === condoId);
-                if (found) setCondoName(String(found.name_th || found.nameTh || found.name || "—"));
-            } catch { /* ignore */ }
-        })();
-    }, [condoId]);
+    const [retryKey, setRetryKey] = useState(0);
 
     //2)โหลด rooms จาก backend
     useEffect(() => {
@@ -223,7 +200,7 @@ export default function RoomsPage() {
         return () => {
             cancelled = true;
         };
-    }, [condoId, condoName]);
+    }, [condoId, retryKey]);
 
     /* ================= computed ================= */
     const roomsTotal = useMemo(() => rooms?.length ?? 0, [rooms]);
@@ -276,9 +253,7 @@ export default function RoomsPage() {
 
                     <button
                         type="button"
-                        onClick={() => {
-                            setCondoId((x) => (x ? `${x}` : x));
-                        }}
+                        onClick={() => setRetryKey((k) => k + 1)}
                         className="mt-4 h-[44px] px-6 rounded-xl bg-white border border-rose-200 text-rose-700 font-extrabold text-sm shadow-sm hover:bg-rose-100/40 active:scale-[0.98]"
                     >
                         ลองใหม่
