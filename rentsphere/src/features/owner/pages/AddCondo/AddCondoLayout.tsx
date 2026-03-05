@@ -99,6 +99,8 @@ export default function AddCondoLayout() {
 
     const condoId = useCondoWizardStore((s) => s.condoId);
     const setCondoId = useCondoWizardStore((s) => s.setCondoId);
+    const wizardMode = useCondoWizardStore((s) => s.wizardMode);
+    const maxUnlockedStep = useCondoWizardStore((s) => s.maxUnlockedStep);
 
     // ✅ Auto-detect condoId: ถ้ายังไม่มี condoId → ดึงจาก /api/v1/condos/mine อัตโนมัติ
     useEffect(() => {
@@ -147,6 +149,25 @@ export default function AddCondoLayout() {
 
     const isStep0 = !!matchPath({ path: "/owner/add-condo/step-0" }, pathname);
     const isStep9 = !!matchPath({ path: "/owner/add-condo/step-9" }, pathname);
+    const currentStep = (() => {
+        const m = pathname.match(/\/owner\/add-condo\/step-(\d+)$/);
+        return m ? Number(m[1]) : null;
+    })();
+
+    useEffect(() => {
+        if (wizardMode === "edit") return;
+        if (currentStep == null || Number.isNaN(currentStep)) return;
+        if (currentStep === 0) return;
+
+        if (maxUnlockedStep <= 0) {
+            navigate("/owner/add-condo/step-0", { replace: true });
+            return;
+        }
+
+        if (currentStep !== maxUnlockedStep) {
+            navigate(`/owner/add-condo/step-${maxUnlockedStep}`, { replace: true });
+        }
+    }, [wizardMode, currentStep, maxUnlockedStep, navigate]);
 
     /* ===== load owner name from auth store ===== */
     const [me, setMe] = useState<MeResponse | null>(null);
@@ -197,20 +218,42 @@ export default function AddCondoLayout() {
         <div className="owner-ui flex h-screen w-full overflow-hidden bg-[#EEF4FF] font-sans text-black/85">
             <aside className="w-[22rem] shrink-0 bg-[#D6E6FF] border-r border-blue-100/80 shadow-[2px_0_14px_rgba(0,0,0,0.05)] flex flex-col h-screen overflow-hidden">
                 <div className="shrink-0 px-8 pt-7 pb-5">
-                    <div className="flex items-start gap-4">
-                        <div className="h-24 w-24 shrink-0 overflow-hidden -mt-2">
-                            <img
-                                src={RentSphereLogo}
-                                alt="RentSphere"
-                                draggable={false}
-                                className="h-full w-full object-contain drop-shadow-[0_14px_24px_rgba(15,23,42,0.22)] scale-[1.18] -translate-y-[12px]"
-                            />
-                        </div>
+                    {wizardMode === "edit" ? (
+                        <button
+                            type="button"
+                            onClick={() => navigate("/owner/condo")}
+                            className="flex items-start gap-4 text-left group focus:outline-none focus-visible:ring-4 focus-visible:ring-blue-300/40 rounded-2xl"
+                            aria-label="Go to owner condo page"
+                        >
+                            <div className="h-24 w-24 shrink-0 overflow-hidden -mt-2">
+                                <img
+                                    src={RentSphereLogo}
+                                    alt="RentSphere"
+                                    draggable={false}
+                                    className="h-full w-full object-contain drop-shadow-[0_14px_24px_rgba(15,23,42,0.22)] scale-[1.18] -translate-y-[12px]"
+                                />
+                            </div>
 
-                        <span className="text-3xl font-extrabold tracking-tight text-gray-900 leading-none pt-[6px]">
-                            RentSphere
-                        </span>
-                    </div>
+                            <span className="text-3xl font-extrabold tracking-tight text-gray-900 leading-none pt-[6px] group-hover:text-blue-700 transition-colors">
+                                RentSphere
+                            </span>
+                        </button>
+                    ) : (
+                        <div className="flex items-start gap-4">
+                            <div className="h-24 w-24 shrink-0 overflow-hidden -mt-2">
+                                <img
+                                    src={RentSphereLogo}
+                                    alt="RentSphere"
+                                    draggable={false}
+                                    className="h-full w-full object-contain drop-shadow-[0_14px_24px_rgba(15,23,42,0.22)] scale-[1.18] -translate-y-[12px]"
+                                />
+                            </div>
+
+                            <span className="text-3xl font-extrabold tracking-tight text-gray-900 leading-none pt-[6px]">
+                                RentSphere
+                            </span>
+                        </div>
+                    )}
 
                     <div className="text-3xl font-extrabold tracking-tight text-gray-900 text-center">
                         คอนโดมิเนียม
@@ -225,7 +268,11 @@ export default function AddCondoLayout() {
                                     key={m.path}
                                     label={m.label}
                                     isActive={isActive(m.path)}
-                                    onClick={() => navigate(`/owner/add-condo/${m.path}`)}
+                                    onClick={
+                                        wizardMode === "edit"
+                                            ? () => navigate(`/owner/add-condo/${m.path}`)
+                                            : undefined
+                                    }
                                 />
                             ))}
                         </div>

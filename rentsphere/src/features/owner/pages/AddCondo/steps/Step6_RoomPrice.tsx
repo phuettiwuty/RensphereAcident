@@ -9,6 +9,10 @@ import type { Room } from "../types/addCondo.types";
 export default function Step6RoomPrice() {
     const nav = useNavigate();
     const condoId = useCondoWizardStore((s) => s.condoId);
+    const unlockStep = useCondoWizardStore((s) => s.unlockStep);
+    const wizardMode = useCondoWizardStore((s) => s.wizardMode);
+    const draftRooms = useCondoWizardStore((s) => s.draftRooms);
+    const setDraftRooms = useCondoWizardStore((s) => s.setDraftRooms);
 
     // ======================
     // Local state (no store)
@@ -24,6 +28,23 @@ export default function Step6RoomPrice() {
     // - setFloorCount, setRooms
     // ======================
     useEffect(() => {
+        if (draftRooms.length > 0) {
+            const mapped = draftRooms.map((r) => ({
+                id: r.id,
+                condoId: r.condoId || "",
+                floor: r.floor,
+                roomNo: r.roomNo,
+                price: r.price,
+                serviceId: r.serviceId,
+                isActive: r.isActive,
+                status: r.status,
+            }));
+            const maxFloor = mapped.reduce((m, r) => Math.max(m, r.floor), 0);
+            setFloorCount(maxFloor);
+            setRooms(mapped);
+            return;
+        }
+
         if (!condoId) return;
         let cancelled = false;
         async function load() {
@@ -43,13 +64,25 @@ export default function Step6RoomPrice() {
                 const maxFloor = apiRooms.reduce((m, r) => Math.max(m, r.floor), 0);
                 setFloorCount(maxFloor);
                 setRooms(apiRooms);
+                setDraftRooms(
+                    apiRooms.map((r) => ({
+                        id: r.id,
+                        condoId: r.condoId,
+                        floor: r.floor,
+                        roomNo: r.roomNo,
+                        price: r.price,
+                        serviceId: r.serviceId,
+                        isActive: r.isActive,
+                        status: r.status,
+                    }))
+                );
             } catch (e) {
                 console.error("load rooms error:", e);
             }
         }
         load();
         return () => { cancelled = true; };
-    }, [condoId]);
+    }, [condoId, draftRooms, setDraftRooms]);
 
     // Group rooms by floor
     const roomsByFloor = useMemo(() => {
@@ -79,7 +112,22 @@ export default function Step6RoomPrice() {
     // Apply price to selected rooms
     const setPriceForRooms = async (roomIds: string[], price: number | null) => {
         const ids = new Set(roomIds);
-        setRooms((prev) => prev.map((r) => (ids.has(r.id) ? { ...r, price } : r)));
+        setRooms((prev) => {
+            const next = prev.map((r) => (ids.has(r.id) ? { ...r, price } : r));
+            setDraftRooms(
+                next.map((r) => ({
+                    id: r.id,
+                    condoId: r.condoId,
+                    floor: r.floor,
+                    roomNo: r.roomNo,
+                    price: r.price,
+                    serviceId: r.serviceId,
+                    isActive: r.isActive,
+                    status: r.status,
+                }))
+            );
+            return next;
+        });
 
         try {
             await setRoomPrices(roomIds.map((id) => ({ roomId: id, price: price ?? 0 })));
@@ -142,16 +190,24 @@ export default function Step6RoomPrice() {
 
                 <button
                     type="button"
+                    disabled={wizardMode !== "edit"}
                     onClick={() => nav("../step-5")}
-                    className="h-[46px] px-6 rounded-xl bg-white border border-gray-200 text-gray-800 font-extrabold text-sm shadow-sm hover:bg-gray-50 active:scale-[0.98] transition
-                     focus:outline-none focus:ring-2 focus:ring-gray-200"
+                    className={[
+                        "h-[46px] px-6 rounded-xl border text-sm font-extrabold transition focus:outline-none focus:ring-2 focus:ring-gray-200",
+                        wizardMode === "edit"
+                            ? "bg-white border-gray-200 text-gray-800 shadow-sm hover:bg-gray-50 active:scale-[0.98]"
+                            : "bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed shadow-none",
+                    ].join(" ")}
                 >
                     ย้อนกลับ
                 </button>
 
                 <button
                     type="button"
-                    onClick={() => nav("../step-7")}
+                    onClick={() => {
+                        unlockStep(7);
+                        nav("../step-7");
+                    }}
                     className="h-[46px] w-24 rounded-xl border-0 text-white font-black text-sm shadow-[0_12px_22px_rgba(0,0,0,0.18)] transition
                      bg-[#93C5FD] hover:bg-[#7fb4fb] active:scale-[0.98] cursor-pointer
                      focus:outline-none focus:ring-2 focus:ring-blue-300"

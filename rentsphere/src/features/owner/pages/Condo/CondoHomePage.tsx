@@ -578,7 +578,7 @@ export default function CondoHomePage() {
                                             type="button"
                                             onClick={() => {
                                                 useCondoWizardStore.getState().clear();
-                                                nav("/owner/add-condo/step-0");
+                                                nav("/owner/add-condo/step-0?mode=strict&fresh=1");
                                             }}
                                             className={[
                                                 "h-[46px] px-10 rounded-xl border-0 text-white font-extrabold text-base tracking-[0.2px]",

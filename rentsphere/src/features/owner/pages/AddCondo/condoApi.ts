@@ -176,6 +176,26 @@ export async function getRooms() {
     return handleRes<{ ok: boolean; rooms: any[] }>(res);
 }
 
+export async function syncRoomsLayout(payload: {
+    floorCount: number;
+    rooms: {
+        floor: number;
+        roomNo: string;
+        price: number | null;
+        serviceId: number | null;
+        isActive: boolean;
+        status: "VACANT" | "OCCUPIED";
+    }[];
+}) {
+    const condoId = getCondoId();
+    const res = await fetch(`${API}/api/v1/condos/${condoId}/rooms/layout`, {
+        method: "PUT",
+        headers: headers(),
+        body: JSON.stringify(payload),
+    });
+    return handleRes<{ ok: boolean; rooms: any[] }>(res);
+}
+
 /* ========== Step 6: Room Prices ========== */
 export async function setRoomPrices(rooms: { roomId: string; price: number }[]) {
     const condoId = getCondoId();

@@ -12,6 +12,10 @@ export default function Step7_Review() {
     const nav = useNavigate();
     const location = useLocation();
     const condoId = useCondoWizardStore((s) => s.condoId);
+    const unlockStep = useCondoWizardStore((s) => s.unlockStep);
+    const wizardMode = useCondoWizardStore((s) => s.wizardMode);
+    const draftRooms = useCondoWizardStore((s) => s.draftRooms);
+    const setDraftRooms = useCondoWizardStore((s) => s.setDraftRooms);
 
     // ======================
     // Local state (no store)
@@ -39,6 +43,26 @@ export default function Step7_Review() {
     // - setSelectedRoomIds(...) (optional)
     // ======================
     useEffect(() => {
+        if (draftRooms.length > 0) {
+            const mapped = draftRooms.map((r) => ({
+                id: r.id,
+                condoId: r.condoId || "",
+                floor: r.floor,
+                roomNo: r.roomNo,
+                price: r.price,
+                serviceId: r.serviceId,
+                isActive: r.isActive,
+                status: r.status,
+            }));
+            const maxFloor = mapped.reduce((m, r) => Math.max(m, r.floor), 0);
+            setFloorCount(maxFloor);
+            setRooms(mapped);
+            if (selectedRoomIds.length === 0) {
+                setSelectedRoomIds(mapped.map((r) => r.id));
+            }
+            return;
+        }
+
         if (!condoId) return;
         let cancelled = false;
         async function load() {
@@ -58,6 +82,18 @@ export default function Step7_Review() {
                 const maxFloor = apiRooms.reduce((m, r) => Math.max(m, r.floor), 0);
                 setFloorCount(maxFloor);
                 setRooms(apiRooms);
+                setDraftRooms(
+                    apiRooms.map((r) => ({
+                        id: r.id,
+                        condoId: r.condoId,
+                        floor: r.floor,
+                        roomNo: r.roomNo,
+                        price: r.price,
+                        serviceId: r.serviceId,
+                        isActive: r.isActive,
+                        status: r.status,
+                    }))
+                );
                 if (selectedRoomIds.length === 0) {
                     setSelectedRoomIds(apiRooms.map((r) => r.id));
                 }
@@ -67,7 +103,7 @@ export default function Step7_Review() {
         }
         load();
         return () => { cancelled = true; };
-    }, [condoId]);
+    }, [condoId, draftRooms, selectedRoomIds.length, setDraftRooms]);
 
     useEffect(() => {
         setPickedIds(selectedRoomIds);
@@ -110,7 +146,22 @@ export default function Step7_Review() {
 
     const setStatusForRooms = async (roomIds: string[], status: RoomStatus) => {
         const ids = new Set(roomIds);
-        setRooms((prev) => prev.map((r) => (ids.has(r.id) ? { ...r, status } : r)));
+        setRooms((prev) => {
+            const next = prev.map((r) => (ids.has(r.id) ? { ...r, status } : r));
+            setDraftRooms(
+                next.map((r) => ({
+                    id: r.id,
+                    condoId: r.condoId,
+                    floor: r.floor,
+                    roomNo: r.roomNo,
+                    price: r.price,
+                    serviceId: r.serviceId,
+                    isActive: r.isActive,
+                    status: r.status,
+                }))
+            );
+            return next;
+        });
 
         try {
             await setRoomStatuses(roomIds.map((id) => ({ roomId: id, status })));
@@ -122,11 +173,24 @@ export default function Step7_Review() {
     const toggleRoomStatus = async (roomId: string) => {
         const room = rooms.find((r) => r.id === roomId);
         const newStatus = room?.status === "VACANT" ? "OCCUPIED" : "VACANT";
-        setRooms((prev) =>
-            prev.map((r) =>
+        setRooms((prev) => {
+            const next = prev.map((r) =>
                 r.id === roomId ? { ...r, status: newStatus as RoomStatus } : r
-            )
-        );
+            );
+            setDraftRooms(
+                next.map((r) => ({
+                    id: r.id,
+                    condoId: r.condoId,
+                    floor: r.floor,
+                    roomNo: r.roomNo,
+                    price: r.price,
+                    serviceId: r.serviceId,
+                    isActive: r.isActive,
+                    status: r.status,
+                }))
+            );
+            return next;
+        });
 
         try {
             await setRoomStatuses([{ roomId, status: newStatus }]);
@@ -293,10 +357,15 @@ export default function Step7_Review() {
                                     </div>
                                     <button
                                         type="button"
+                                        disabled={wizardMode !== "edit"}
                                         onClick={() => nav("../step-6")}
-                                        className="mt-4 h-[44px] px-5 rounded-xl border-0 text-white font-black text-sm shadow-[0_12px_22px_rgba(0,0,0,0.18)] transition
-                               bg-[#93C5FD] hover:bg-[#7fb4fb] active:scale-[0.98] cursor-pointer
-                               focus:outline-none focus:ring-2 focus:ring-blue-300"
+                                        className={[
+                                            "mt-4 h-[44px] px-5 rounded-xl border-0 text-white font-black text-sm shadow-[0_12px_22px_rgba(0,0,0,0.18)] transition",
+                                            "focus:outline-none focus:ring-2 focus:ring-blue-300",
+                                            wizardMode === "edit"
+                                                ? "bg-[#93C5FD] hover:bg-[#7fb4fb] active:scale-[0.98] cursor-pointer"
+                                                : "bg-slate-200 text-slate-500 cursor-not-allowed shadow-none",
+                                        ].join(" ")}
                                     >
                                         กลับไป Step 6
                                     </button>
@@ -362,9 +431,14 @@ export default function Step7_Review() {
 
                 <button
                     type="button"
+                    disabled={wizardMode !== "edit"}
                     onClick={() => nav("../step-6")}
-                    className="h-[46px] px-5 rounded-xl bg-white border border-gray-200 text-gray-800 font-extrabold text-sm shadow-sm hover:bg-gray-50 active:scale-[0.98] transition
-                     focus:outline-none focus:ring-2 focus:ring-gray-200"
+                    className={[
+                        "h-[46px] px-5 rounded-xl border text-sm font-extrabold transition focus:outline-none focus:ring-2 focus:ring-gray-200",
+                        wizardMode === "edit"
+                            ? "bg-white border-gray-200 text-gray-800 shadow-sm hover:bg-gray-50 active:scale-[0.98]"
+                            : "bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed shadow-none",
+                    ].join(" ")}
                 >
                     ย้อนกลับ
                 </button>
@@ -372,7 +446,10 @@ export default function Step7_Review() {
                 <button
                     type="button"
                     disabled={!canGoNext}
-                    onClick={() => nav("../step-8")}
+                    onClick={() => {
+                        unlockStep(8);
+                        nav("../step-8");
+                    }}
                     className={[
                         "h-[46px] w-24 rounded-xl border-0 text-white font-black text-sm shadow-[0_12px_22px_rgba(0,0,0,0.18)] transition",
                         "focus:outline-none focus:ring-2 focus:ring-blue-300",
