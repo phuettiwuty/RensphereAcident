@@ -1,8 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronLeft, FileText, CheckCircle2, Clock, AlertTriangle, Receipt } from "lucide-react";
+import { ChevronLeft, FileText, CheckCircle2, Clock, AlertTriangle, Receipt, ChevronDown } from "lucide-react";
 
 const API = "https://backendlinefacality.onrender.com";
+
+type InvoiceItem = {
+  description: string;
+  amount: number;
+};
 
 type Invoice = {
   id: string;
@@ -12,6 +17,7 @@ type Invoice = {
   dueDate: string | null;
   paidAt: string | null;
   createdAt: string;
+  items?: InvoiceItem[];
 };
 
 const statusConfig: Record<string, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
@@ -69,6 +75,7 @@ const BillingPage: React.FC = () => {
   const [condoName, setCondoName] = useState("");
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<"ALL" | "UNPAID" | "PAID">("ALL");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
     const lineUserId = localStorage.getItem("lineUserId");
@@ -101,6 +108,10 @@ const BillingPage: React.FC = () => {
 
   const totalUnpaid = invoices.filter(i => ["UNPAID", "OVERDUE"].includes(i.status)).reduce((s, i) => s + i.totalAmount, 0);
   const totalPaid = invoices.filter(i => i.status === "PAID").reduce((s, i) => s + i.totalAmount, 0);
+
+  const toggleExpand = (id: string) => {
+    setExpandedId(prev => prev === id ? null : id);
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 via-white to-white pb-28">
@@ -148,12 +159,12 @@ const BillingPage: React.FC = () => {
           </div>
 
           {/* Filter Tabs */}
-          <div className="px-4 py-2 flex gap-2">
+          <div className="px-4 py-2 flex gap-2 overflow-x-auto no-scrollbar pb-2">
             {(["ALL", "UNPAID", "PAID"] as const).map((f) => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
-                className={`px-4 py-2 rounded-full text-sm font-semibold transition-all ${filter === f
+                className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all ${filter === f
                     ? "bg-blue-600 text-white shadow-md"
                     : "bg-white text-gray-500 border border-gray-200 hover:bg-gray-50"
                   }`}
@@ -179,11 +190,15 @@ const BillingPage: React.FC = () => {
               filtered.map((inv) => {
                 const st = statusConfig[inv.status] || statusConfig.UNPAID;
                 const isSlipVerified = inv.note?.includes("ตรวจ slip อัตโนมัติ");
+                const isExpanded = expandedId === inv.id;
+                const hasItems = inv.items && inv.items.length > 0;
 
                 return (
                   <div
                     key={inv.id}
-                    className={`bg-white rounded-2xl border p-4 shadow-sm transition-all hover:shadow-md ${inv.status === "PAID" ? "border-emerald-100" : "border-gray-100"
+                    onClick={() => hasItems && toggleExpand(inv.id)}
+                    className={`bg-white rounded-2xl border p-4 shadow-sm transition-all ${hasItems ? 'cursor-pointer hover:shadow-md' : ''
+                      } ${inv.status === "PAID" ? "border-emerald-100" : "border-gray-100"
                       }`}
                   >
                     <div className="flex items-start justify-between mb-3">
@@ -222,22 +237,44 @@ const BillingPage: React.FC = () => {
                           </p>
                         )}
                       </div>
-                      {isSlipVerified && (
-                        <span className="text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
-                          ✅ Slip Verified
-                        </span>
-                      )}
+                      <div className="flex flex-col items-end gap-2">
+                        {isSlipVerified && (
+                          <span className="text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
+                            ✅ Slip Verified
+                          </span>
+                        )}
+                        {hasItems && (
+                          <div className={`w-6 h-6 rounded-full bg-gray-50 flex items-center justify-center transition-transform ${isExpanded ? 'rotate-180' : ''}`}>
+                            <ChevronDown size={14} className="text-gray-400" />
+                          </div>
+                        )}
+                      </div>
                     </div>
 
+                    {/* Expandable Details */}
+                    {isExpanded && hasItems && (
+                      <div className="mt-4 pt-3 border-t border-dashed border-gray-200">
+                        <p className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wide">รายละเอียดค่าใช้จ่าย</p>
+                        <div className="space-y-2">
+                          {inv.items!.map((item, idx) => (
+                            <div key={idx} className="flex justify-between items-center text-sm">
+                              <span className="text-gray-600">{item.description}</span>
+                              <span className="font-medium text-gray-800">฿{item.amount.toLocaleString()}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {inv.note && !isSlipVerified && (
-                      <p className="mt-2 text-xs text-gray-400 bg-gray-50 rounded-lg p-2">
+                      <p className="mt-3 text-xs text-gray-400 bg-gray-50 rounded-lg p-2 leading-relaxed">
                         📝 {inv.note}
                       </p>
                     )}
 
                     {isSlipVerified && inv.note && (
-                      <p className="mt-2 text-xs text-blue-500 bg-blue-50/50 rounded-lg p-2">
-                        🔍 {inv.note}
+                      <p className="mt-3 text-xs text-blue-500 bg-blue-50/50 rounded-lg p-2 leading-relaxed">
+                        🔍 {inv.note.split('|').map((part, i) => <span key={i} className="block">{part.trim()}</span>)}
                       </p>
                     )}
                   </div>

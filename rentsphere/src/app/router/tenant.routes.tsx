@@ -25,6 +25,8 @@ import RepairDetail from "@/features/owner/pages/tenant/repairs/RepairDetail";
 import RepairCreate from "@/features/owner/pages/tenant/repairs/RepairCreate";
 import TenantProfilePage from "../../features/tenant/pages/profile/pages/TenantProfilePage";
 
+import BillingPage from "../../features/tenant/pages/billing/pages/BillingPage";
+
 // ✅ Guard เดิม
 function RequireLineLogin({ children }: { children: React.ReactNode }) {
   const lineUserId = localStorage.getItem("lineUserId");
@@ -81,7 +83,7 @@ const tenantRoutes: RouteObject[] = [
       { path: "notifications", element: <ComingSoon title="Notifications" /> },
       { path: "profile", element: <TenantProfilePage /> },
       { path: "maintenance", element: <MaintenancePage /> },
-      { path: "billing", element: <ComingSoon title="Billing" /> },
+      { path: "billing", element: <BillingPage /> },
 
       { path: "*", element: <Navigate to="home" replace /> },
     ],
