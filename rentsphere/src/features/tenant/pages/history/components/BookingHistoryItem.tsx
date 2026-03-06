@@ -11,8 +11,8 @@ const BookingHistoryItem: React.FC<BookingHistoryItemProps> = ({ booking, onUpda
   const getStatusStyle = (status: BookingStatus) => {
     switch (status) {
       case 'BOOKED': return { label: 'จองแล้ว', bg: 'bg-purple-100 text-purple-600' };
-      case 'CHECKED_IN': return { label: 'เข้าใช้งานแล้ว', bg: 'bg-green-100 text-green-600' };
-      case 'COMPLETED': return { label: 'เสร็จสิ้น', bg: 'bg-blue-100 text-blue-600' };
+      case 'ACTIVE': return { label: 'เข้าใช้งานแล้ว', bg: 'bg-green-100 text-green-600' };
+      case 'FINISHED': return { label: 'เสร็จสิ้น', bg: 'bg-blue-100 text-blue-600' };
       case 'CANCELLED': return { label: 'ยกเลิก', bg: 'bg-red-100 text-red-600' };
       default: return { label: status, bg: 'bg-gray-100 text-gray-600' };
     }
@@ -24,7 +24,7 @@ const BookingHistoryItem: React.FC<BookingHistoryItemProps> = ({ booking, onUpda
   // ในโปรเจกต์จริงจะเช็คเวลาปัจจุบันกับ slot
   // สำหรับ Demo นี้เราจะอนุญาตให้กดได้ถ้าสถานะเป็น BOOKED
   const canCheckIn = booking.status === 'BOOKED';
-  const canFinish = booking.status === 'CHECKED_IN';
+  const canFinish = booking.status === 'ACTIVE';
 
   return (
     <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100 mb-4 overflow-hidden relative">
@@ -54,8 +54,8 @@ const BookingHistoryItem: React.FC<BookingHistoryItemProps> = ({ booking, onUpda
       </div>
 
       {canCheckIn && (
-        <button 
-          onClick={() => onUpdateStatus(booking.id, 'CHECKED_IN')}
+        <button
+          onClick={() => onUpdateStatus(booking.id, 'ACTIVE')}
           className="w-full py-3 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold rounded-2xl shadow-lg shadow-blue-100 active:scale-95 transition-all flex items-center justify-center gap-2"
         >
           <CheckCircle2 size={18} />
@@ -64,8 +64,8 @@ const BookingHistoryItem: React.FC<BookingHistoryItemProps> = ({ booking, onUpda
       )}
 
       {canFinish && (
-        <button 
-          onClick={() => onUpdateStatus(booking.id, 'COMPLETED')}
+        <button
+          onClick={() => onUpdateStatus(booking.id, 'FINISHED')}
           className="w-full py-3 bg-emerald-500 text-white font-bold rounded-2xl shadow-lg shadow-emerald-100 active:scale-95 transition-all"
         >
           ใช้งานเสร็จแล้ว

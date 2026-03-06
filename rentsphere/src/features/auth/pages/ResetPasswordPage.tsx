@@ -178,11 +178,7 @@ const ResetPasswordPage: React.FC = () => {
 
           <form onSubmit={onSubmit} className="space-y-6">
             {/* RequestId missing */}
-            {!requestId && (
-              <div className="rounded-xl bg-red-50 border border-red-200 p-4 text-sm text-red-700">
-                ลิงก์ไม่ถูกต้อง หรือหมดอายุ กรุณาเริ่มใหม่จากหน้า “ลืมรหัสผ่าน”
-              </div>
-            )}
+
 
             {/* Code */}
             <div>

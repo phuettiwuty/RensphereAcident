@@ -464,6 +464,9 @@ export default function CondoHomePage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    // เลือกว่าพยายามลบคอนโดไหนอยู่ (ถ้า null คือไม่ได้เปิด popup)
+    const [deletingCondo, setDeletingCondo] = useState<CondoItem | null>(null);
+
     const loadCondos = async () => {
         try {
             setError(null);
@@ -505,14 +508,19 @@ export default function CondoHomePage() {
         nav("/owner/dashboard");
     };
 
-    const handleDelete = async (c: CondoItem) => {
-        const ok = window.confirm(`ต้องการลบคอนโด "${c.name}" จริงหรือไม่?\n(ข้อมูลห้อง/ผู้เช่าที่ผูกอยู่จะถูกลบด้วย)`);
-        if (!ok) return;
+    const handleDeleteClick = (c: CondoItem) => {
+        setDeletingCondo(c);
+    };
+
+    const confirmDelete = async () => {
+        if (!deletingCondo) return;
         try {
-            await deleteCondo(c.id);
-            setCondos((prev) => prev.filter((x) => x.id !== c.id));
+            await deleteCondo(deletingCondo.id);
+            setCondos((prev) => prev.filter((x) => x.id !== deletingCondo.id));
+            setDeletingCondo(null);
         } catch (e: any) {
             alert(e?.message || "ลบไม่สำเร็จ");
+            setDeletingCondo(null);
         }
     };
 
@@ -698,7 +706,7 @@ export default function CondoHomePage() {
                                                                             </button>
                                                                             <button
                                                                                 type="button"
-                                                                                onClick={(e) => { e.stopPropagation(); handleDelete(c); }}
+                                                                                onClick={(e) => { e.stopPropagation(); handleDeleteClick(c); }}
                                                                                 className="h-[40px] w-[40px] rounded-xl bg-white border border-rose-200 text-rose-500 font-black text-sm shadow-sm hover:bg-rose-50 hover:text-rose-600 active:scale-95 transition flex items-center justify-center"
                                                                                 title="ลบคอนโด"
                                                                             >
@@ -724,6 +732,48 @@ export default function CondoHomePage() {
                     </div>
                 </div>
             </div>
+
+            {/* Delete Popup Custom Modal */}
+            {deletingCondo && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+                    {/* Backdrop */}
+                    <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setDeletingCondo(null)} />
+
+                    {/* Modal Content */}
+                    <div className="relative w-full max-w-md transform overflow-hidden rounded-3xl bg-white p-8 text-center shadow-2xl transition-all border border-rose-100">
+                        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-rose-100 mb-6">
+                            <svg className="h-8 w-8 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                        </div>
+
+                        <h3 className="text-xl font-extrabold text-gray-900 mb-2">
+                            ลบคอนโด "{deletingCondo.name}"?
+                        </h3>
+                        <p className="text-sm font-bold text-gray-500 mb-8">
+                            การกระทำนี้ไม่สามารถย้อนกลับได้<br className="max-sm:hidden" /> ข้อมูลห้อง, ผู้พักอาศัย, และประวัติที่เกี่ยวข้องทั้งหมดจะถูกลบถาวร
+                        </p>
+
+                        <div className="flex gap-4 w-full">
+                            <button
+                                type="button"
+                                onClick={() => setDeletingCondo(null)}
+                                className="flex-1 h-[48px] rounded-xl bg-white border border-gray-200 text-gray-700 font-extrabold text-base shadow-sm hover:bg-gray-50 active:scale-95 transition-all"
+                            >
+                                ยกเลิก
+                            </button>
+                            <button
+                                type="button"
+                                onClick={confirmDelete}
+                                className="flex-1 h-[48px] rounded-xl border-0 text-white font-extrabold text-base shadow-[0_8px_16px_rgba(244,63,94,0.25)] transition-all !bg-rose-500 hover:!bg-rose-600 active:scale-95"
+                            >
+                                ยืนยันการลบ
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
         </div>
     );
 }

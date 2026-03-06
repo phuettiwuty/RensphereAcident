@@ -154,8 +154,8 @@ const BillingPage: React.FC = () => {
                 key={f}
                 onClick={() => setFilter(f)}
                 className={`px-4 py-2 rounded-full text-sm font-semibold transition-all ${filter === f
-                    ? "bg-blue-600 text-white shadow-md"
-                    : "bg-white text-gray-500 border border-gray-200 hover:bg-gray-50"
+                  ? "bg-blue-600 text-white shadow-md"
+                  : "bg-white text-gray-500 border border-gray-200 hover:bg-gray-50"
                   }`}
               >
                 {f === "ALL" ? "ทั้งหมด" : f === "UNPAID" ? "ค้างชำระ" : "ชำระแล้ว"}
